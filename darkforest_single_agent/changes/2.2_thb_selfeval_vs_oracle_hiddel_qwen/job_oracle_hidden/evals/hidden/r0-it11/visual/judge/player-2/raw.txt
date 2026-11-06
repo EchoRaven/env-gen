@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both are full-bleed black-letterboxed players with no app chrome. Both put a back arrow top-left and a control row along the bottom edge. The reference also has a top-right cluster (flag icon plus an 'Ad 12' badge), and the implementation leaves that corner empty. The reference's bottom row has three zones: pause and volume on the left, a centred caption, and fullscreen on the right. The implementation adds a full-width progress bar above the row and a cluster of four icons on the right.",
+      "fix": "Add the top-right cluster (flag icon plus Ad countdown badge). Rebuild the bottom bar as three zones: pause and volume left, centred caption, fullscreen far right. Remove the progress bar and time readout while an ad is playing."
+    },
+    "components": {
+      "score": 0.35,
+      "notes": "Matches: back arrow, play/pause button, volume icon, fullscreen button. The reference shows an ad-playing state. The implementation shows the regular playback controls instead, so the ad-specific components are missing and several controls the reference doesn't have are added: a seek bar, a '0:00 / 0:00' time readout, 10s back/forward buttons, a volume slider, subtitles, audio description and episodes icons. The implementation shows a play icon where the reference shows pause.",
+      "missing": ["Flag/report icon (top-right)", "'Ad 12' countdown badge with yellow left accent bar (top-right)", "Centred '<Title> begins after ads' caption in the bottom bar", "Pause icon in the playing state (implementation shows play)"],
+      "fix": "When an ad is playing, render the flag icon and 'Ad N' badge top-right and the '<Title> begins after ads' caption centred in the bottom row. Hide the seek bar, time, skip ±10, volume slider, subtitles, AD and episodes controls. Show pause while playing."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both are minimal: white controls float straight over the video, with no panels or rounded containers. The reference's controls are larger and spaced further apart. The implementation's bottom row is denser and smaller.",
+      "fix": "Make the bottom control icons about 40–50px and add more horizontal spacing. Give the Ad badge a small dark rectangle with a 4px yellow left bar."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use white on dark video. The reference's one accent is the yellow/amber bar on the Ad badge, and the implementation has nothing in that colour. The implementation's seek bar adds a grey/white line.",
+      "fix": "Add the amber (#E5A00D-ish) vertical accent on the Ad badge, set on a dark translucent background."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a clean sans-serif. The reference has a centred caption in regular weight at about 22px and a small 'Ad 12' label. The implementation's only text is a small '0:00 / 0:00' time readout above the right icons.",
+      "fix": "Add the centred caption in regular-weight sans at about 22px, white. Set 'Ad 12' at about 18px. Remove the time readout in the ad state."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "Both use outline white icons: back arrow, speaker, and corner-bracket fullscreen. The reference's icons are bigger and thicker-stroked, it has a flag outline icon, and its pause is filled bars. The implementation's icons are smaller, it has no flag, and it adds rewind/forward, subtitles, AD and list icons.",
+      "fix": "Make the back arrow, speaker and fullscreen icons about 1.3× bigger with a bolder stroke. Add an outline flag icon top-right. Drop the extra icons in the ad state."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference copy is 'Ad 12' and '<Title> begins after ads'. Neither string appears in the implementation, which shows only '0:00 / 0:00'.",
+      "fix": "Add the 'Ad {seconds}' badge text and the '{Title} begins after ads' caption."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference has a flag icon and an 'Ad 12' badge with a yellow accent bar; the implementation's top-right corner is empty",
+    "bottom centre: the reference has the centred caption '<Title> begins after ads'; the implementation has no centred text",
+    "bottom bar: the implementation adds a full-width seek bar and a '0:00 / 0:00' time readout that the reference (ad state) doesn't have",
+    "bottom-left: the implementation adds 10s rewind/forward buttons and a volume slider; the reference has only pause and the speaker icon",
+    "bottom-right: the implementation adds subtitles, audio description and episodes icons next to fullscreen; the reference has only fullscreen",
+    "bottom-left: the implementation shows a play icon where the reference shows pause",
+    "control sizing: the reference's bottom icons are larger and more widely spaced than the implementation's compact row"
+  ],
+  "fixes": [
+    "Add an ad-playing state to the player and render it on this route",
+    "Top-right: add an outline flag icon, then an 'Ad {n}' badge (dark box, 4px amber left bar, white text)",
+    "Bottom row: pause and speaker icons left, centred '{Title} begins after ads' caption, fullscreen right",
+    "In the ad state, hide the seek bar, time readout, ±10s buttons, volume slider, subtitles, AD and episodes icons",
+    "Make the control icons bigger (about 44px) with wider spacing, and show pause while playing"
+  ],
+  "summary": "The implementation renders the standard playback controls instead of the reference's ad-playing state, so the flag icon, Ad countdown badge and 'begins after ads' caption are missing and many controls the reference doesn't show are added."
+}
+```

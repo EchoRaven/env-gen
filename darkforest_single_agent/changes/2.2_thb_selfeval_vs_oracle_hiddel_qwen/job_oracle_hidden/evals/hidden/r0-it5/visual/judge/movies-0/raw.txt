@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.62,
+      "notes": "Both use a top nav over a full-bleed hero, with left-aligned hero text and a horizontal row underneath. Differences: the reference puts the 'Movies' title and Genres dropdown directly under the nav, at the top-left over the hero. The implementation moves them below the hero, above the first row. The reference hero title block sits higher, starting at about y=200. In the implementation it starts at about y=550, so the hero is taller and pushes the row lower. The reference has a mute button and a TV-14 maturity bar on the right edge of the hero; the implementation puts TV-14 inline next to the buttons. Row tiles in the reference are landscape 16:9, about 6 per view; the implementation uses portrait posters, about 11 per view.",
+      "fix": "Move the 'Movies' heading and Genres dropdown to sit just under the nav (about y=130) over the top-left of the hero. Raise the hero title block so it starts around 18% of viewport height. Put the mute circle and TV-14 bar on the right edge of the hero at button height. Make the rows landscape 16:9 tiles, about 6 visible."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: nav with 7 items, search, bell, profile avatar and caret, hero Play and More Info buttons, Genres dropdown, 'Gems for You' row. Missing: the Kids profile link in the header, the 'TOP 10' badge with the '#3 in Movies Today' line, the mute toggle button, the right-edge maturity-rating bar, TOP 10 badges and 'Recently Added' labels on tiles, the small brand 'N'/NETFLIX label above the title art, and the row page-indicator dashes. Extra: an '87% Match 2026' metadata line that the reference doesn't show. The active nav item is just bold text instead of a pill.",
+      "missing": ["Kids profile link (header)", "TOP 10 badge + '#N in Movies Today' rank line", "mute/volume toggle button", "right-edge maturity rating bar (TV-14)", "TOP 10 corner badges on tiles", "'Recently Added' red tile labels", "NETFLIX brand label above hero title", "row page-indicator dashes", "active-nav pill highlight"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are dark and cinematic with a bottom fade over the hero, a white solid Play button and a translucent grey More Info button. The reference's active nav item is a rounded grey pill. The reference Genres control is a square-cornered black box with a white border; the implementation uses a native rounded select. The reference tiles are slightly rounded landscape cards with tight gaps.",
+      "fix": "Give the active nav item a rounded translucent-grey pill. Style Genres as a black box with a 1px white border, square corners and a white caret. Use 16:9 tiles with about 4px radius and about 8px gaps."
+    },
+    "color": {
+      "score": 0.78,
+      "notes": "The dark base, red wordmark, white and grey buttons and white text all match. The implementation adds a green Match colour that the reference doesn't have. It also has no red TOP 10 or Recently Added accents.",
+      "fix": "Remove the green match text. Add the red TOP 10 badge in the hero and red 'Recently Added' pills on the tiles."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans UI font and a condensed display title. In the reference, nav text is larger (about 17px) and grey, with the active item white; the implementation's nav is smaller (about 14px). The reference's 'Movies' page heading is large (about 40px) at the top. The reference description is larger (about 22px) and the rank line is about 28px. The implementation's description is smaller (about 17px).",
+      "fix": "Make nav labels about 17px grey with the active item white. Put the 'Movies' heading at about 40px at the top. Set the hero synopsis to about 22px and the rank line to about 28px."
+    },
+    "iconography": {
+      "score": 0.62,
+      "notes": "The outline search, bell and info icons and the solid play triangle match. The avatar is a green 'V' square where the reference has a blue smiley-face square; the Kids icon is missing. The tile imagery is portrait posters, while the reference uses landscape title-card art with the title burned in. The mute icon is missing.",
+      "fix": "Use landscape title-card artwork in the rows. Add a circular outlined mute icon and the colourful Kids tile icon in the header. Use a blue smiley profile avatar."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, Play, More Info, Genres, Movies and 'Gems for You' all match. Missing: the 'Kids' label and the '#N in Movies Today' text. '87% Match' is copy the reference doesn't have.",
+      "fix": "Add a 'Kids' label in the header and a '#N in Movies Today' line. Remove '87% Match'."
+    }
+  },
+  "similarity": 0.64,
+  "empty_state": false,
+  "deviations": [
+    "Page header: in the reference, the 'Movies' heading and Genres dropdown sit at the top-left under the nav, over the hero; in the implementation they sit below the hero, above the first row",
+    "Content rows: the reference uses landscape 16:9 title-card tiles (about 6 per view); the implementation uses portrait poster tiles (about 11 per view)",
+    "Hero: the reference has a TOP 10 badge and '#3 in Movies Today' line under the title; the implementation has an '87% Match 2026' metadata line instead",
+    "Hero right edge: the reference has a circular mute button and a TV-14 rating bar against the right edge; the implementation has neither, and shows a small TV-14 box inline next to More Info instead",
+    "Hero vertical position: the reference title block starts high (about y=200) and fills the left half; the implementation's starts low (about y=550)",
+    "Header right: the reference has a 'Kids' link with its icon before the avatar; the implementation lacks it",
+    "Nav active state: the reference has a rounded grey pill behind 'Movies'; the implementation only bolds it",
+    "Tiles: the reference shows TOP 10 corner badges and red 'Recently Added' labels; the implementation has none",
+    "Genres control: the reference is a black box with a white border and square corners; the implementation uses a native rounded select",
+    "Hero synopsis and nav text are noticeably smaller in the implementation"
+  ],
+  "fixes": [
+    "Move the 'Movies' heading (about 40px) and the Genres dropdown (black, 1px white border, square corners) to the top-left just under the nav, overlaying the hero",
+    "Switch the row tiles to 16:9 landscape cards, about 6 per viewport, with about 8px gaps, TOP 10 corner badges and red 'Recently Added' bottom labels",
+    "Replace the '87% Match 2026' line with a red TOP 10 badge and a '#N in Movies Today' line (about 28px)",
+    "Add a circular outlined mute button and a right-edge TV-14 bar (grey left border, translucent background) aligned with the hero buttons; remove the inline TV-14 box",
+    "Raise the hero title block so it starts around 18% of viewport height, and enlarge the synopsis to about 22px",
+    "Add the Kids icon and 'Kids' label in the header before the avatar; give the active nav item a rounded grey pill; enlarge the nav labels to about 17px"
+  ],
+  "summary": "The implementation gets the Netflix shell and hero buttons right, but misplaces the Movies/Genres header, uses portrait tiles instead of landscape ones, and is missing the TOP 10 rank line, the mute button, the right-edge rating bar, the Kids link and the tile badges."
+}
+```

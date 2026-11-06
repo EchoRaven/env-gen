@@ -1,0 +1,73 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "Both have the same top-nav skeleton: logo, then nav links, then icons on the right. Both have a hero followed by a horizontal row. In the reference, the hero is an inset card with rounded corners (~67px side margins), sitting below a header with a solid gradient background. The implementation uses a classic full-bleed hero that runs under a transparent header. The reference row tiles are wide 16:9 landscape cards, about 5 per viewport. The implementation uses narrow portrait tiles, about 10.5 per viewport. The reference row has a segmented page indicator at the right of the row header, and the implementation has none.",
+      "fix": "Put the hero in a rounded card (~16px radius) inset to the page gutters (~67px) and below the header, not behind it. Switch row tiles to 16:9 landscape cards ~350px wide with ~8px gaps. Add the segmented progress indicator to the right of the row title."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "pill-shaped active state on the 'Home' nav item",
+        "Kids profile switcher (icon + 'Kids' label) in the header",
+        "mute/sound toggle button at the top-right of the hero",
+        "LIVE badge + status line under the title",
+        "dot-separated metadata row (genre • year • seasons • rating)",
+        "'New Episode' tag at the bottom-right of the hero",
+        "row pagination indicator (segmented bars)",
+        "Top 10 badge on row tiles"
+      ],
+      "notes": "Present: logo, 7 nav items, search, bell, profile avatar with caret, Play and More Info buttons, row title, tiles. Invented items: a '92% Match' line, a synopsis paragraph, a boxed TV-14 rating chip, and an info icon inside More Info. None of these appear in the reference.",
+      "fix": "Add the Home pill, the Kids switcher, the hero mute button, the dot-separated metadata row, the bottom-right 'New Episode' tag, and the row page indicator. Remove the match %, synopsis and boxed rating chip."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "The reference uses a modern rounded style: a pill nav highlight, a rounded hero card with a shadow, pill-shaped Play/More Info buttons, and rounded tiles. The implementation uses square-cornered rectangular buttons, a full-bleed hero, and square-ish poster tiles, which is the older Netflix style.",
+      "fix": "Make Play and More Info full pills (~26px radius, ~52px tall). Give the hero card a ~16px radius plus a soft shadow. Give tiles ~8px radius."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both are dark with a red wordmark, a white Play button and a gray translucent More Info button. The reference page background is a warm dark gray-brown gradient, close to #2a2826 at the top. The implementation is closer to near-black. The green match text is an accent the reference does not have.",
+      "fix": "Use a warm charcoal gradient for the page background and header. Use the semi-transparent gray pill for the Home active state. Remove the green match text."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans font. The reference nav labels are larger (~18px) with wide spacing. The implementation nav is ~14px and tightly packed. The reference row title is larger and bolder (~26px). The reference metadata is medium weight at ~18px. In the implementation, the title-art treatment is a plain condensed text logo, which is acceptable.",
+      "fix": "Set nav links to ~18px with ~44px gaps. Set the row header to ~26px semibold. Set the metadata row to ~18px medium with bullet separators. Set button labels to ~20px semibold."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The search, bell and caret icons are similar line icons. The reference avatar is a blue rounded square with a smile; the implementation uses a letter avatar, which is acceptable. The Kids icon is missing. The More Info button in the implementation has an info icon the reference lacks. Imagery uses portrait posters instead of 16:9 landscape art, and there are no Top 10 badges.",
+      "fix": "Use 16:9 landscape artwork for row tiles, with a corner Top 10 badge where applicable. Remove the info icon from More Info. Add the Kids icon."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels match exactly, and 'Play' / 'More Info' match. The row heading differs, but that is content. The implementation adds '92% Match' and synopsis copy that the reference does not show.",
+      "fix": "Add the 'Kids' label and 'New Episode' tag text. Remove '% Match'."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "hero: reference is an inset rounded card below the header; implementation is a full-bleed hero behind a transparent header",
+    "row: reference uses wide 16:9 landscape tiles (~5 visible); implementation uses narrow portrait posters (~10 visible)",
+    "hero buttons: reference Play/More Info are pills; implementation uses square-cornered rectangles, and More Info adds an info icon",
+    "hero metadata: reference has a LIVE badge line plus a dot-separated genre/year/seasons/rating row; implementation shows a green % Match, the year, a synopsis paragraph and a boxed TV-14 chip",
+    "header nav: reference highlights Home with a gray pill and uses larger, widely spaced labels; implementation shows bold text only, with small, tightly packed labels",
+    "header right: reference has a Kids icon + label before the avatar; implementation lacks it",
+    "hero top-right: reference has a circular mute button; implementation lacks it",
+    "hero bottom-right: reference has a 'New Episode' tag; implementation lacks it",
+    "row header right: reference has a segmented page indicator; implementation lacks it",
+    "tiles: reference shows a Top 10 badge on a tile; implementation has none"
+  ],
+  "fixes": [
+    "Render the hero as a rounded (~16px) card inset to the page gutters, below a solid warm-gray gradient header",
+    "Change row tiles to 16:9 landscape cards ~350px wide, rounded, ~8px gaps, and add the segmented page indicator right of the row title",
+    "Make Play (white) and More Info (translucent gray) pill buttons with no info icon",
+    "Replace the match % / synopsis / boxed rating with a status line (badge + text) and a dot-separated metadata row",
+    "Add a gray pill active state on Home and enlarge nav labels to ~18px with wider spacing",
+    "Add the Kids switcher in the header, a circular mute button at the hero top-right, and a 'New Episode' tag at the hero bottom-right",
+    "Add Top 10 corner badges to applicable tiles"
+  ],
+  "summary": "The Netflix chrome and the hero-plus-row skeleton are recognisable, but the implementation uses the older full-bleed hero, square buttons and portrait tiles instead of the reference's inset rounded hero card, pill controls and landscape tiles, and it lacks several hero and header components."
+}

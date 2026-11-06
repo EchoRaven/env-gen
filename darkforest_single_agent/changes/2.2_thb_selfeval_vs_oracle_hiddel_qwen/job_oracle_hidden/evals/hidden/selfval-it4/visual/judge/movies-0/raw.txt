@@ -1,0 +1,72 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The top bar, full-bleed hero, a 'Movies' heading under the nav and a 'Gems for You' carousel all match. The differences: the Genres dropdown sits at the far right instead of directly beside the 'Movies' heading, and the 'Movies' heading sits lower (~y185 vs ~y130). The hero content block is indented about 110px instead of sharing the 67px gutter with the nav and heading. The hero is taller, which pushes the row down to ~y1010 instead of ~y870, and the next row heading isn't visible.",
+      "fix": "Put the Genres dropdown right next to the 'Movies' title, about 50px to its right. Align the hero content to the 67px gutter. Move the hero block up so the title lockup starts at ~y200. Shorten the hero so the 'Gems for You' row starts around y840."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "Kids profile link (kids icon + 'Kids' label) in the header",
+        "Active pill highlight behind the 'Movies' nav item",
+        "Brand 'N SERIES/NETFLIX' red logo above the hero title",
+        "TOP 10 badge + '#3 in Movies Today' ranking line",
+        "Mute toggle button at the hero's right edge",
+        "Maturity rating flag (TV-14 with left bar) at the hero's right edge",
+        "Row page indicator dashes above the carousel",
+        "TOP 10 corner badges and 'Recently Added' red tag on row tiles",
+        "Title-logo art on row thumbnails"
+      ],
+      "notes": "Present: nav links (all 7), search, bell, avatar with caret, Movies heading, Genres dropdown, Play, More Info, and the row with tiles. The implementation adds a match %/year/runtime/rating metadata row that the reference doesn't show. The rating belongs in the right-side flag instead.",
+      "fix": "Add the Kids link before the avatar. Add the pill background on the active nav item. Replace the metadata row with a TOP 10 badge plus '#N in Movies Today'. Add a circular mute button and a TV-14 rating flag on the hero's right edge. Add TOP 10 and 'Recently Added' badges to tiles. Add page-indicator dashes on the row."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are a dark, cinematic, flat Netflix style with square-ish buttons. The reference's Genres control has a heavier boxed look (black fill, white 1px border, compact). In the implementation it's a faint, translucent rounded box. In the reference, Play and More Info are larger and the description runs larger with a narrower measure.",
+      "fix": "Style Genres as a black box with a 1px white border, square corners and a solid down-triangle. Give the description a max-width of ~680px."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The dark base, red wordmark, white Play button and grey translucent More Info match. The implementation adds green match text, which the reference doesn't use. The left/bottom vignette is similar.",
+      "fix": "Remove the green match text. Use red for the TOP 10 and 'Recently Added' badges."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use sans throughout. 'Movies' in the reference is much larger (~40px vs ~26px). The nav is larger in the reference (~17px vs ~13px), and the active item is bold on a pill. The description in the reference is ~22px across multiple lines, versus ~14px on one long line. The ranking line is ~28px.",
+      "fix": "Set the 'Movies' heading to ~40px and the nav links to ~16-17px. Set the hero description to ~22px with a narrow column that wraps to about 3 lines. Set the Play and More Info labels to ~22px."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Line search and bell icons match. The reference Play icon is a filled black triangle, while the implementation uses an outline. The reference avatar is a blue smiley rounded square, and the implementation's is a letter tile. The reference row tiles carry title art and badges. The hero has a condensed title lockup in both.",
+      "fix": "Switch the Play icon to a filled triangle. Use an image-style rounded-square profile avatar. Overlay title logos and badges on the tiles."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'Movies', 'Genres', 'Play', 'More Info' and 'Gems for You' all match. 'Kids' is missing, and so is the '#N in Movies Today' phrasing.",
+      "fix": "Add the 'Kids' label and the '#N in Movies Today' line."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "hero: the TOP 10 badge + '#3 in Movies Today' line is missing; a match/year/runtime/rating metadata row appears in its place",
+    "hero right edge: the mute button and TV-14 maturity flag are missing",
+    "page header: the Genres dropdown is pushed to the far right instead of sitting beside the 'Movies' title, and its styling is faint instead of a black box with a white border",
+    "hero block is indented ~110px instead of aligning to the 67px page gutter, and the hero is taller, so the row starts lower",
+    "header: the Kids profile link is missing, and the active 'Movies' nav item has no pill highlight",
+    "hero: no brand 'NETFLIX' red label above the title lockup",
+    "typography: the nav, 'Movies' heading and hero description are all noticeably smaller than in the reference; the description is a single long line instead of a wrapped ~3-line block",
+    "row tiles: no TOP 10 or 'Recently Added' badges, no title art, and no page-indicator dashes",
+    "Play button uses an outline triangle instead of a filled one"
+  ],
+  "fixes": [
+    "Move the Genres dropdown right next to the 'Movies' heading, styled as a black box with a 1px white border and a solid caret; enlarge the heading to ~40px and place it at ~y130",
+    "Replace the hero metadata row with a red TOP 10 badge plus '#N in Movies Today' (~28px), and add a small red brand label above the title",
+    "Add a circular mute button and a TV-14 rating flag with a left bar at the hero's right edge, around y680",
+    "Align the hero content to the 67px gutter, set the description to ~22px with a max-width of ~680px, and enlarge the Play and More Info buttons; make the Play icon filled",
+    "Add a 'Kids' link with an icon before the avatar, and a rounded pill behind the active nav item; set the nav font to ~16px",
+    "Shorten the hero so the 'Gems for You' row starts at ~y840; add TOP 10 and 'Recently Added' badges and page-indicator dashes to the row"
+  ],
+  "summary": "The Netflix Movies skeleton is right, but Genres is misplaced, the TOP 10 ranking line, mute button, rating flag and Kids link are missing, and the type is undersized."
+}

@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1aa75-ee82-75a1-af5c-a6049b22933c",
+ "num_turns": 5,
+ "commands": 2,
+ "usage": {
+  "input_tokens": 15987,
+  "cached_input_tokens": 14112,
+  "cache_write_input_tokens": 0,
+  "output_tokens": 275,
+  "reasoning_output_tokens": 160
+ },
+ "is_error": false,
+ "result": "\n\n89\n\nSummed `17`, `29`, and `43` from `numbers.txt` and wrote the result to `answer.txt`.",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 7.2,
+ "_stderr": "Reading additional input from stdin...\n"
+}

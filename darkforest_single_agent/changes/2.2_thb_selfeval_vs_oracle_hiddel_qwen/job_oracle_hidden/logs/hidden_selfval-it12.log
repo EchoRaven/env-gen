@@ -1,0 +1,129 @@
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             2  e.g. shared/hubs/registryhub_endpoints.json:151: env-gen
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_selfval/runs/netflix__r0/snapshots/iter12/workspace",
+ "tag": "selfval-it12",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 46,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 3,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 4,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 18,
+  "total": 21,
+  "failed": [
+   "nav 'Browse by Languages' opens its screen",
+   "the title detail and My List steps ran",
+   "no console errors during the walk"
+  ]
+ },
+ "visual_captured": 17,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 2
+ },
+ "visual": {
+  "mean_similarity": 0.507,
+  "n_scored": 17,
+  "n_screens": 20,
+  "below_0.55": [
+   "browse_by_languages",
+   "games",
+   "landing",
+   "login",
+   "player",
+   "title_detail",
+   "title_episodes"
+  ],
+  "per_screen": {
+   "landing": 0.54,
+   "login": 0.5,
+   "browse_home": 0.587,
+   "browse_home_rows": 0.607,
+   "shows": 0.593,
+   "movies": 0.607,
+   "games": 0.5,
+   "new_and_popular": 0.6,
+   "genre_category": 0.64,
+   "browse_by_languages": 0.03,
+   "my_list": 0.607,
+   "title_detail": 0.483,
+   "title_episodes": 0.5,
+   "rate_dialog": null,
+   "player": 0.06,
+   "player_controls": 0.66,
+   "account_menu": 0.55,
+   "card_hover_preview": null,
+   "card_preview": null,
+   "shows_genres_menu": 0.56
+  }
+ }
+}

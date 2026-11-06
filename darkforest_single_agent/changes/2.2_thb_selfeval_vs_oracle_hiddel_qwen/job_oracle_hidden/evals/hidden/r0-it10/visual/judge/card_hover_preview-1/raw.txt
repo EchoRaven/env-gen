@@ -1,0 +1,74 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "Both use a black top nav with horizontal rails, but the page around them is different. The reference is a genre sub-page: a breadcrumb header ('TV Shows > Sports TV Shows') sits on a black band, followed by stacked landscape rails. The implementation shows the Home billboard with synopsis and Play/More Info buttons above the rails, which the reference doesn't have. The hover card is placed differently too. In the reference it is about 435px wide, grows from the hovered tile, stays centred on it and covers the rail below. In the implementation it is about 340px wide, sits below the tile and is shifted left past the rail gutter (x≈8). The original tile still shows behind it with faint button ghosts. There is a stray empty-state line ('…ck a title to start.') between the rails. The reference has a small page-indicator dash at the top right of each rail. The implementation has left and right arrow controls instead.",
+      "fix": "Render this state on a genre page with the breadcrumb header and no billboard. Position the hover card absolutely, centred on the hovered tile, scaled to about 1.5× the tile width (around 435px) and overlapping the rails above and below. Clamp it inside the 66px gutter. Hide the base tile's controls while the card is open. Remove the empty-state text between rails."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "The hover card has the core controls: play, add, thumbs-up and a chevron, a maturity badge and genre tags separated by bullets. Several reference details are missing. There's no title logo over the preview image and no mute toggle on the media. The metadata row has no '3 Seasons' or HD badge. In the reference the chevron is a large outlined circle aligned to the right of the button row; here it is tiny and dim. The implementation adds a green '92% Match' plus year line that the reference card doesn't show, and moves TV-14 to the right of the button row. Outside the card: there is no breadcrumb header, no pill highlight on the active nav item, no Kids profile link and no rail page indicators. The tiles have no 'Recently Added', 'Live Now' or TOP 10 badges.",
+      "missing": [
+        "title logo over the hover-card preview",
+        "mute/volume toggle on the preview",
+        "seasons count + HD badge in the metadata row",
+        "large right-aligned 'more info' chevron circle",
+        "breadcrumb page header (TV Shows > genre title)",
+        "pill highlight on the active nav item",
+        "Kids profile link in the header",
+        "rail page indicator dashes",
+        "tile badges (Recently Added / Live Now / TOP 10)"
+      ]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Both are flat and dark with circular outlined buttons. The reference card is large and airy, with buttons about 50px across, a soft shadow and rounded bottom corners. The implementation card is compact, with buttons about 28px across, and feels cramped. The reference tiles are 16:9 landscape with rounded corners. The implementation tiles are tall portrait posters.",
+      "fix": "Make the card buttons about 50px circles with 2px grey outlines and a solid white play button. Use 20–24px padding and rounded corners of about 6px with a soft drop shadow. Switch the rail tiles to 16:9 landscape art at about 290×165px."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "The palette is close: a near-black background, a dark grey card surface, a white play button and grey outlines. Two differences: the implementation adds green match text that the reference card lacks, and its nav bar is a lighter grey (#141414-ish) where the reference nav and header band are pure black.",
+      "fix": "Remove the green match text from the card. Use pure black for the nav and header band, and keep the card body around #181818."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use sans-serif type. The reference card text is larger: metadata around 17px and tags around 17px in white. The implementation uses about 13px. The reference has a large 40px page title in the breadcrumb, and its nav labels are bigger (about 17px). Rail headings in the implementation are bold. The reference headings are medium weight at about 26px.",
+      "fix": "Set card metadata and tags to about 17px. Use a TV-14 badge with a hairline border and 17px text. Set rail headings to about 26px medium weight and nav labels to about 17px. Add the 40px breadcrumb title."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "The icon styles match: outlined circles with a play triangle, a plus and a thumbs-up. In the implementation the icons are much smaller and the chevron is barely visible. The preview image is a plain poster crop with no title logo, where the reference uses a 16:9 still with the logo bottom-left and a mute icon bottom-right. The rail tiles use portrait art instead of landscape art.",
+      "fix": "Use a 16:9 backdrop in the hover card with the title logo bottom-left and an outlined mute icon bottom-right. Scale the action icons up to match the reference."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The nav labels match, though the reference shows 'Shows' as active and the implementation shows 'Home'. The card adds 'NN% Match' wording that isn't in the reference. There's no seasons text, and a leaked empty-state string 'ck a title to start.' shows on the page.",
+      "fix": "Show '<n> Seasons' and 'HD' after the rating, drop the Match text, and remove the stray empty-state copy."
+    }
+  },
+  "similarity": 0.45,
+  "empty_state": false,
+  "deviations": [
+    "hover card: about 340px wide, sitting below the tile and pushed left past the gutter. The reference card is about 435px wide, centred over the hovered tile and expanded outward",
+    "page header: the implementation shows the Home billboard with synopsis and Play/More Info buttons. The reference shows a breadcrumb title band ('TV Shows > Sports TV Shows') directly above the rails",
+    "rail tiles: portrait posters in the implementation, 16:9 landscape tiles in the reference",
+    "hover card preview: no title logo and no mute toggle over the image",
+    "hover card metadata: the implementation adds a green 'Match' and year line and leaves out seasons count and HD badge. TV-14 is on the right of the button row instead of starting the metadata row",
+    "hover card buttons: about 28px across, and the chevron is tiny and dim. The reference uses about 50px circles with a prominent right-aligned chevron",
+    "base tile shows ghost buttons beneath the card, and a stray empty-state text appears between rails",
+    "nav: no pill highlight on the active item, no Kids link, and smaller labels",
+    "rails: left and right arrow controls instead of page-indicator dashes; tile badges missing"
+  ],
+  "fixes": [
+    "Anchor the hover card centred on the hovered tile at about 1.5× tile width (around 435px), clamped within the gutters, overlapping neighbouring rails, and hide the base tile's controls while it is open",
+    "Use a 16:9 backdrop in the card with the title logo bottom-left and an outlined mute button bottom-right",
+    "Card body: play, add and thumbs-up as about 50px outlined circles, with the 'more info' chevron circle right-aligned in the same row",
+    "Metadata row: bordered TV-14 badge, then '3 Seasons', then an HD badge at about 17px. Below it, genre tags separated by bullets. Remove the Match line",
+    "Render this route on a genre page with the breadcrumb header instead of the Home billboard, and remove the stray empty-state text",
+    "Switch rail tiles to 16:9 landscape art and add page-indicator dashes plus Recently Added / TOP 10 badges",
+    "Nav: add a pill background on the active item, bump labels to about 17px and add the Kids link"
+  ],
+  "summary": "The hover card has the right controls but is undersized, misplaced and simplified, with no title logo, mute toggle or seasons/HD row. It sits on a Home page with portrait tiles instead of a landscape-tile genre page."
+}
+```

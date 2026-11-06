@@ -1,0 +1,71 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The basic skeleton matches. Both have a full-bleed video stage with a back arrow at the top left, a full-width progress bar above a bottom control row, a time label to the right of the bar, playback controls on the left and utility controls on the right. Differences: the reference puts a centred title lockup in the bottom row, and the implementation leaves the middle empty. The reference has a flag icon at the top right, and the implementation has nothing there. In the reference the control row sits about 70px above the bottom edge with large spacing. In the implementation it is squeezed against the bottom edge.",
+      "fix": "Make the bottom row three zones: left (play/pause, back 10, forward 10, volume), centre (title lockup), right (next episode, episodes, subtitles, fullscreen). Raise the row and the progress bar about 30px so the gap above the bottom edge matches the reference. Add a report flag icon at the top right, level with the back arrow."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: back arrow, progress bar, time label, play/pause, back 10, forward 10, volume, subtitles, fullscreen, and probably an episodes button (the list icon). Missing: the centred show/episode title, the next-episode button, the top-right flag (report) button, the scrubber knob, the red played portion and the lighter buffered portion of the bar. Extra: an inline volume slider and an 'AD' audio-description button, neither of which is in the reference. The time label shows elapsed/total ('0:00 / 0:00') where the reference shows a single remaining-time value.",
+      "missing": [
+        "centered title lockup (bold show name + episode number + episode title)",
+        "next-episode button (play-triangle with bar)",
+        "top-right report/flag button",
+        "progress scrubber knob (red dot)",
+        "red played segment and lighter buffered segment on progress bar",
+        "episodes button using stacked-cards icon (implementation uses a list icon)"
+      ]
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both use minimal, flat, chromeless overlay controls with no panels or radii. The reference has large, airy controls (about 48px icons, about 90px apart). The implementation's controls are small (about 24px) and tightly packed, so it looks like a generic HTML5 player.",
+      "fix": "Scale the control icons to about 44–48px with about 40–50px gaps between them. Increase the progress bar's height and side insets to match the reference."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both are dark with white icons and text. The reference's only accent is red, used for the played part of the progress bar and the scrubber knob, with grey for the track and lighter grey for buffered. The implementation's bar is plain grey and has no red accent.",
+      "fix": "Colour the played portion and the scrubber knob red (#E50914). Use mid grey for the track and light grey for the buffered range."
+    },
+    "typography": {
+      "score": 0.45,
+      "notes": "The reference has a centred title of about 22px: the show name in bold, then the episode number and title in regular weight. Its remaining-time label is small and white. The implementation has no title text at all. Its time label is small and similar in style but uses a different format.",
+      "fix": "Add the centred title in a sans of about 22px: '<Show> ' in bold followed by 'E1  <Episode title>' in regular weight. Show the time as a single remaining-time value like '32:57'."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "Both use white line-style icons. The reference icons are large with bold strokes: a filled pause, circular-arrow back/forward icons with a large '10', a speaker with sound waves, next-episode, stacked-cards episodes, a speech-bubble subtitles icon and corner-bracket fullscreen. The implementation's icons are much smaller and thinner. Its volume icon shows a muted state, its episodes icon is a list, and it adds an AD glyph.",
+      "fix": "Replace the icons with large bold-stroke versions: back/forward-10 circles with large numerals, a speaker with waves, next-episode, stacked-cards episodes, a speech-bubble subtitles icon and bracket fullscreen. Remove the AD glyph and the volume slider."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "There is little copy to compare. The time format differs ('0:00 / 0:00' against a remaining time like '32:57'). The implementation has no title lockup and adds an 'AD' label.",
+      "fix": "Show remaining time only and add the title lockup text."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "bottom centre: the reference has a centred title lockup ('<Show> E1 <Episode>', with the show name in bold); the implementation has no title",
+    "bottom right: the reference has a next-episode button left of the episodes icon; the implementation has none",
+    "top right: the reference has a flag/report icon; the implementation has nothing there",
+    "progress bar: the reference has a red played segment, a red scrubber knob and a lighter buffered segment; the implementation has a plain thin grey line with no knob",
+    "bottom control row: the reference icons are about 48px and widely spaced; the implementation's are about 24px and tightly packed",
+    "bottom left: the implementation adds an inline volume slider that the reference does not have",
+    "bottom right: the implementation adds an 'AD' audio-description button that the reference does not have, and uses a list icon where the reference uses a stacked-cards episodes icon",
+    "time label: the reference shows a single remaining time ('32:57'); the implementation shows '0:00 / 0:00'",
+    "vertical position: the reference's control row sits higher, with more bottom padding; the implementation's hugs the bottom edge"
+  ],
+  "fixes": [
+    "Add a centred title lockup to the bottom control row: bold show name, then the episode number and title in regular weight, about 22px, white",
+    "Add a next-episode button between the centre title and the episodes button. Swap the list icon for a stacked-cards episodes icon",
+    "Add a flag/report icon button at the top right, level with the back arrow",
+    "Restyle the progress bar: red (#E50914) played fill and a red round scrubber knob of about 16px, light-grey buffered range, mid-grey track",
+    "Enlarge all control icons to about 44–48px with bold strokes and about 45px gaps, and raise the control row so it has about 50px of bottom padding",
+    "Remove the inline volume slider and the AD button",
+    "Change the time label to a single remaining-time value"
+  ],
+  "summary": "The implementation has the right player skeleton but is missing the centred title, the next-episode and flag buttons, and the red scrubber, and its controls are small and generic instead of the reference's large bold ones."
+}
+```

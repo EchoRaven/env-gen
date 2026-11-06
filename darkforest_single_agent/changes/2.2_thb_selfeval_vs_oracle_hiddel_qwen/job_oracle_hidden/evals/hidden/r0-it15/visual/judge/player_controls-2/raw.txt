@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.65,
+      "notes": "The basic skeleton matches: a full-bleed video area, a back arrow at top-left, a full-width progress bar above a single bottom control row, a time readout at the right end of the bar, and playback controls on the left with utility controls on the right. Differences: the reference's top-right flag is missing, the reference's centered title in the middle of the bottom row is missing, and a thin black band sits above the video in the implementation. The bottom row is also shorter and sits lower, so its icons are clustered more tightly.",
+      "fix": "Add a top-right flag (report) button that mirrors the back arrow. Put a centered title block in the bottom control row, between the left and right control groups. Remove the black strip at the top so the video area is full-bleed. Make the bottom row about 90px tall with icons spaced about 90px apart."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, progress bar, time readout, play/pause, back 10, forward 10, volume, subtitles, an episodes-style button and fullscreen. Missing: the report flag, the centered show/episode title, the next-episode button, and the red scrubber knob with red elapsed fill and a lighter buffered segment. Added controls the reference does not show: an inline volume slider and an AD (audio description) button. The episodes control is a list icon, but the reference uses stacked cards.",
+      "missing": ["top-right report/flag button", "centered title 'Show E# Episode title' in the bottom bar", "next-episode button (play-with-bar icon)", "red progress fill with red circular scrubber knob", "buffered-segment highlight on the progress track"],
+      "fix": "Add the flag button, the centered title and a next-episode button placed just left of the episodes button. Remove the inline volume slider and the AD button. Change the progress bar to red elapsed fill, a red circular knob, a light-grey buffered section and a dark-grey remainder."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both use a flat, minimal overlay with no panels or containers. The reference has large, airy controls (icons around 50px), while the implementation's controls are small (around 24px) and dense. The reference's progress track is around 4px thick; the implementation's is a hairline.",
+      "fix": "Scale the control icons to about 48–52px and the progress track to about 4px. Keep the controls on a plain or black background with no chrome."
+    },
+    "color": {
+      "score": 0.55,
+      "notes": "The white icons on a dark background match. The reference uses Netflix red for the elapsed progress and the scrubber, but the implementation has no red accent anywhere and its bar is a uniform grey. The reference keeps the controls on pure black; the implementation puts them over a bright poster with no darkening gradient.",
+      "fix": "Color the elapsed progress and knob #E50914. Add a black gradient behind the bottom controls and the top bar so the icons stay readable over bright frames."
+    },
+    "typography": {
+      "score": 0.4,
+      "notes": "The reference has a centered bottom title in two weights: a bold show name, followed by a regular 'E1' and the episode title, at about 22px. The implementation has no title text. Its time readout is a small, grey '0:00 / 0:00' showing elapsed and total, while the reference shows a single white remaining-time value.",
+      "fix": "Render '<b>Show</b> E# Episode' centered in the control row as a sans-serif at about 22px, with the show name bold and the rest regular. Make the time readout a single white remaining-time value of about 16px."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use white line icons. The implementation's icons are far smaller. Its back-10 and forward-10 icons don't show the '10' clearly inside a circular arrow, and its volume icon is in the muted state. The episodes control is a list icon, but the reference uses stacked cards. The reference's flag and next-episode icons are absent.",
+      "fix": "Use about 50px outline icons: a filled pause, circular-arrow icons with a large '10' for back and forward, a speaker with waves for volume, a play-with-bar icon for next episode, stacked rectangles for episodes, a speech bubble with lines for subtitles and corner brackets for fullscreen."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The reference's only control text is the title line and the remaining time. The implementation has no title line, adds an 'AD' label and uses an 'elapsed / total' time format.",
+      "fix": "Show the title in the 'Show E1 Episode' format, show the time as a single remaining-time value, and remove the AD label."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "bottom bar center: the reference has a centered title (bold show name, 'E1', episode title); the implementation has nothing there",
+    "progress bar: the reference has red elapsed fill, a red circular knob and a light-grey buffered segment; the implementation has a thin, uniform grey hairline with no knob",
+    "bottom-right: the reference has a next-episode button before the episodes button; the implementation lacks it",
+    "top-right: the reference has a flag/report icon; the implementation has none",
+    "bottom controls: the reference's icons are about 50px and widely spaced; the implementation's are about 24px and tightly packed",
+    "bottom-left: the implementation adds an inline volume slider that the reference does not show",
+    "bottom-right: the implementation adds an 'AD' audio-description button that the reference does not show",
+    "episodes control: the reference uses a stacked-cards icon; the implementation uses a hamburger/list icon",
+    "time readout: the reference shows a single remaining time (32:57); the implementation shows '0:00 / 0:00' in grey",
+    "top edge: the implementation shows a black strip above the video area"
+  ],
+  "fixes": [
+    "Add a centered title in the bottom control row: '<b>Show name</b> E# Episode title', about 22px, white",
+    "Restyle the progress bar: about 4px track, #E50914 elapsed fill, red circular knob of about 18px, light-grey buffered section, dark-grey remainder; show a single remaining-time value at the right",
+    "Add a next-episode button (play-with-bar icon) just left of the episodes button and change the episodes icon to stacked cards",
+    "Add a flag/report icon button at the top right, aligned with the back arrow",
+    "Remove the inline volume slider and the AD button",
+    "Scale all control icons to about 48–52px with about 90px spacing; use a filled pause icon while playing",
+    "Add bottom and top dark gradients behind the controls and remove the black strip at the top"
+  ],
+  "summary": "The player overlay skeleton is recognisable, but the implementation lacks the centered title, the red scrubber, the next-episode and flag buttons, adds a volume slider and an AD button, and its icons are much smaller."
+}
+```

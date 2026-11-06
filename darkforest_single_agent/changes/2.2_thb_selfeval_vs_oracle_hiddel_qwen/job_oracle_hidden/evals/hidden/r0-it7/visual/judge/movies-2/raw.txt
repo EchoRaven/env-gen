@@ -1,0 +1,72 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.62,
+      "notes": "Both use a transparent top nav over a full-bleed hero, with the hero copy on the left and a 'Gems for You' row underneath. The differences: the reference puts the 'Movies' title and Genres dropdown at the top left of the hero, just under the nav. The implementation moves that header below the hero, right above the row. The reference's hero copy starts high (around y=200) and fills the left column, while the implementation's sits near the bottom. The reference's row uses landscape 16:9 tiles about 290px wide. The implementation uses portrait poster tiles about 170px wide, so about 11 fit instead of 6. The reference has a mute button and maturity rating flag on the hero's right edge. The implementation puts the rating inline next to the buttons.",
+      "fix": "Move the 'Movies' h1 and Genres dropdown into the hero overlay at the top left, about 110px from the top. Push the hero's title lockup up to start around y=200. Switch the row tiles to landscape 16:9, about 290×165px with 8px gaps. Move the rating to a right-edge flag with a mute button beside it, about two-thirds of the way down the hero."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "Pill-shaped highlight on the active nav item (Movies)",
+        "'Kids' profile link with its icon next to the bell",
+        "Small 'N'/brand label above the hero title",
+        "Top 10 badge with '#N in Movies Today' rank line",
+        "Circular mute/volume button on the hero",
+        "Maturity rating flag on the right edge, with a vertical bar on its left",
+        "Top 10 corner badges on row tiles",
+        "Red 'Recently Added' tags on row tiles",
+        "Row page indicator (thin dashes at top right of the row)"
+      ],
+      "notes": "Both have the nav items (7 in each), search, bell, avatar with caret, Play and More Info buttons, the Genres dropdown and the Gems row. The implementation adds a '87% Match · 2026' metadata line that the reference doesn't show, and it replaces the Top 10 rank line. Its Genres control is a native select, not the reference's outlined box with a caret.",
+      "fix": "Add the active-nav pill, the Kids link, the Top 10 rank line, the mute button and the right-edge rating flag. Add Top 10 and 'Recently Added' badges to the tiles and page dashes to the row. Remove the match/year line."
+    },
+    "style": {
+      "score": 0.72,
+      "notes": "Both have the same cinematic dark-overlay style with a bottom gradient and slightly rounded rectangular buttons. In the reference, the active nav item sits in a translucent grey pill. Its Genres control is a black box with a 1px white border and square corners, but the implementation's is a rounded native select. The reference's buttons are taller and wider.",
+      "fix": "Style Genres as a black box with a 1px white border, square corners and a white caret. Add a rounded grey pill behind the active nav item. Make Play and More Info about 58px tall, with More Info using a translucent grey (rgba 109,109,110,0.7) background."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both are dark with a #141414 base, red wordmark, white Play button and grey More Info button. The implementation adds a green '87% Match' that the reference lacks. It is also missing the reference's red Top 10 and Recently Added badges. The reference's rating flag sits on a translucent dark background.",
+      "fix": "Remove the green match text. Use Netflix red (#E50914) for the Top 10 and 'Recently Added' badges. Give the rating flag a rgba(51,51,51,0.6) background with a light grey left bar."
+    },
+    "typography": {
+      "score": 0.68,
+      "notes": "Both use a sans UI font and a condensed display face for the hero title. The reference's hero type is much bigger: a huge two-line logo lockup about 140px tall, a 30px rank line and a ~24px synopsis. The implementation has a single-line title about 60px tall and a ~17px synopsis. The reference's page title 'Movies' is larger, about 44px. The rating text in the reference is about 22px, not a tiny bordered label.",
+      "fix": "Scale the hero title to about 130–150px tall. Set the synopsis to about 22–24px with roughly 1.3 line height and a max width of about 680px. Add a 28–30px rank line. Use about 22px text for the rating flag."
+    },
+    "iconography": {
+      "score": 0.62,
+      "notes": "Both use the same outline icons: search, bell, play triangle and the circled-i on More Info. The reference's avatar is a blue smiley square, and the implementation's is a green 'V' letter tile, which is acceptable. The implementation is missing the Kids icon, the mute speaker icon and the Top 10 badge graphic. Its tiles are portrait posters, not the reference's landscape 16:9 stills with title lockups.",
+      "fix": "Use landscape 16:9 backdrops for the row tiles, with small radii. Add a Top 10 badge SVG, a mute speaker icon in a circular outline and the colourful 'kids' icon."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels, Movies, Genres, Gems for You, Play and More Info all match. The implementation is missing 'Kids' in the header and the '#N in Movies Today' line, and it adds '% Match' copy the reference doesn't have.",
+      "fix": "Add the 'Kids' label and the '#N in Movies Today' line. Remove the '% Match' text."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "Page header: the reference puts 'Movies' and the Genres dropdown at the top left of the hero, under the nav. The implementation puts them below the hero, above the first row.",
+    "Gems for You row: the reference uses landscape 16:9 tiles about 290px wide, with about 6 visible. The implementation uses portrait poster tiles about 170px wide, with about 11 visible.",
+    "Hero right edge: the reference has a circular mute button and a maturity rating flag with a left bar. The implementation has no mute button and shows the rating as a tiny bordered label next to More Info.",
+    "Hero rank line: the reference shows a red Top 10 badge with '#3 in Movies Today'. The implementation shows a green '87% Match 2026' line instead.",
+    "Hero scale: the reference has a huge two-line title lockup with a brand label above it, a ~24px synopsis and larger buttons. The implementation has a smaller single-line title and ~17px text, placed lower in the hero.",
+    "Nav: the reference highlights the active 'Movies' item with a grey pill and shows a 'Kids' link with its icon. The implementation uses bold text only and has no Kids link.",
+    "Row tiles: the reference has Top 10 corner badges and red 'Recently Added' tags, plus a page indicator above the row. The implementation has none of these.",
+    "Genres control: the reference uses a square black box with a white border. The implementation uses a rounded native select."
+  ],
+  "fixes": [
+    "Move the 'Movies' title (about 44px) and the Genres dropdown (black, 1px white border, square corners) into the hero overlay at the top left, just under the nav.",
+    "Change the row tiles to landscape 16:9, about 290×165px with 8px gaps, using backdrop images that carry title lockups.",
+    "Add a circular mute button and a right-edge rating flag (translucent dark background, left bar, ~22px text) to the hero's right side. Remove the inline TV-14 label.",
+    "Replace the '% Match / year' line with a red Top 10 badge and a '#N in Movies Today' line at about 28px.",
+    "Scale up the hero: title lockup about 140px tall starting around y=200, synopsis about 23px, Play and More Info about 58px tall.",
+    "Add a grey pill highlight behind the active nav item and a 'Kids' link with its icon before the bell.",
+    "Overlay Top 10 corner badges and red 'Recently Added' tags on the relevant tiles. Add page-indicator dashes at the top right of the row."
+  ],
+  "summary": "The implementation gets Netflix's dark hero-plus-rows look right, but it moves the Movies/Genres header below the hero and uses portrait tiles instead of landscape ones. It also drops the mute button, the right-edge rating flag, the Top 10 rank line, the tile badges, the Kids link and the active-nav pill, and its hero type is too small."
+}

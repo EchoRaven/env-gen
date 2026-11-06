@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both have a top header with the NETFLIX wordmark on the left, the nav links next to it, and search, bell and avatar with caret on the right. Both show a dropdown anchored top-right under the avatar, right-aligned to the content edge and about 280px wide. Differences: the reference menu starts just under the header (y≈72) and is about 355px tall. The implementation's menu starts lower (y≈88) and runs longer because an extra card is stacked at the bottom. The page behind it differs: the reference shows the Browse by Languages title row and a tile grid, while the implementation shows the Home hero. The nav links in the reference are spaced wider and fill more of the header.",
+      "fix": "Anchor the dropdown about 8px below the avatar (top ≈72px) and drop the bottom card so the menu ends after the sign-out row. Widen nav link spacing to about 40px gaps."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: the profile row with an avatar at the top, Manage Profiles, an account entry and a sign-out entry. Missing: Transfer Profile, Help Center, the hairline divider above sign-out, and the Kids profile switcher (kids tile + 'Kids' label) in the header next to the avatar. The active nav state is a grey pill in the reference but only bold white text in the implementation. Invented: a 'continue watching' card with a thumbnail, a progress ring, 'Series • Watch now' and a red Play button inside the menu.",
+      "missing": ["Transfer Profile menu item", "Help Center menu item", "divider above sign-out row", "header Kids profile shortcut (kids avatar + 'Kids' label)", "pill-shaped active nav highlight"],
+      "fix": "Make the menu items: [other profile avatar + name], Manage Profiles, Transfer Profile, Account, Help Center, a hairline divider, then 'Sign out of Netflix' with no icon. Remove the continue-watching card. Add a kids avatar + 'Kids' label left of the main avatar in the header."
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Reference menu: an elevated dark-grey panel with corners rounded about 8px, no visible border, generous rows about 58px tall, and a single hairline divider. Implementation menu: square corners with a visible light border, tighter rows about 52px, and a nested card that has its own surface and a bright button, which adds visual noise.",
+      "fix": "Give the menu panel an 8px border-radius, remove the 1px border, use a soft shadow, set row height to about 58px, and add a single 1px divider before sign-out."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a dark scheme with a near-black page, a dark grey menu surface and white text. The reference menu surface is a slightly lighter, warm-neutral grey (#1f1f1f–#262626) with no accent colour. The implementation adds a red Play button and a light-blue thumbnail inside the menu, plus a purple avatar.",
+      "fix": "Keep the menu monochrome: surface about #232323, white labels, no red CTA inside the menu."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a clean sans for labels at regular weight, about 17–18px in the menu, so they roughly match. Header nav text is clearly smaller in the implementation (about 13px vs about 17px), and the active item is bold where the reference uses a semibold label inside a pill.",
+      "fix": "Raise header nav links to about 17px regular and keep menu labels at about 17px regular, white."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use outline icons. The reference's icons are larger (about 26px) with a heavier stroke: pencil, transfer, person, question-circle. The implementation's are small (about 16px) and thin: people, gear, logout arrow. The reference's sign-out row has no icon. Its profile avatars are image tiles with rounded-square corners, while the implementation uses a letter avatar.",
+      "fix": "Use 24–26px outline icons with a ~1.75px stroke: pencil for Manage Profiles, a profile-transfer glyph, a person for Account and a circled ? for Help Center. Remove the icon from the sign-out row."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "'Manage Profiles' matches. The implementation says 'Account Settings' where the reference says 'Account', and 'Sign out' where the reference says 'Sign out of Netflix'. 'Transfer Profile' and 'Help Center' are absent, and 'Series • Watch now' / 'Play' are invented.",
+      "fix": "Rename the items to 'Account' and 'Sign out of Netflix', and add 'Transfer Profile' and 'Help Center'."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "account dropdown bottom: implementation adds a continue-watching card (thumbnail, progress ring, 'Series • Watch now', red Play button) that the reference menu does not have",
+    "account dropdown items: 'Transfer Profile' and 'Help Center' rows from the reference are missing",
+    "account dropdown: the reference has a hairline divider above an icon-less 'Sign out of Netflix'; the implementation shows 'Sign out' with a logout icon and no divider",
+    "account dropdown: 'Account Settings' with a gear icon instead of 'Account' with a person icon",
+    "header right: the reference shows a kids profile tile with a 'Kids' label between the bell and the avatar; the implementation does not",
+    "account dropdown panel: square corners with a visible border vs the reference's rounded (~8px), borderless elevated panel",
+    "account dropdown icons: small, thin ~16px glyphs vs the reference's larger ~26px outline icons",
+    "header nav: smaller text (~13px), tighter spacing, and the active state is bold text instead of a grey rounded pill"
+  ],
+  "fixes": [
+    "Remove the continue-watching/Play card from the account dropdown",
+    "Set the menu items to: profile row (avatar + name), Manage Profiles (pencil), Transfer Profile, Account (person), Help Center (?-circle), a 1px divider, then 'Sign out of Netflix' with no icon",
+    "Style the dropdown panel with an 8px radius, no border, a #232323 surface, a soft shadow, ~58px rows and ~26px icons",
+    "Place the dropdown top just under the header (~72px)",
+    "Add a kids profile avatar + 'Kids' label to the header left of the main avatar",
+    "Enlarge the header nav to ~17px with wider gaps, and render the active item as a grey rounded pill"
+  ],
+  "summary": "The menu sits in the right place and is the right kind of dark dropdown, but it lacks Transfer Profile, Help Center and the divider, uses different labels, has square bordered styling, and adds a continue-watching card the reference doesn't have."
+}
+```

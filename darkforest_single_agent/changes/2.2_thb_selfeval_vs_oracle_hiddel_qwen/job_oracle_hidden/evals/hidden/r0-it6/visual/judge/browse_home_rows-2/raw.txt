@@ -1,0 +1,80 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both use a top nav bar with the logo and links on the left and icons on the right, followed by stacked horizontal rows on a dark page. Differences: the reference shows only rows of landscape 16:9 tiles about 350px wide with roughly 5.3 tiles visible. The implementation shows tall portrait tiles about 168px wide with 10+ per row. It also shows a hero fragment (Play / More Info / TV-14) at the top, which the reference does not have at this scroll state. Two sections show empty-text rows (Continue Watching, Games) instead of tile rows. A hover preview card overlaps the rows. The TV Action row ends after 6 tiles, leaving a blank right half. The reference rows also have a progress-segment page indicator on the right side of each header, which the implementation lacks.",
+      "fix": "Change row tiles to landscape 16:9, about 350×197px with 8px gaps, so about 5.3 tiles show and the last one is cut off at the right edge. Remove the hero from this scroll state, or scroll past it. Hide rows that have no data instead of showing text placeholders."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The nav has 7 links and Home is active, which matches. Search and bell icons and the avatar with caret are present. Missing: the pill highlight behind the active 'Home' item, the 'Kids' profile entry with its icon, the segmented page-indicator bars at the right of each row header, red badges on tiles ('New Season', 'New Episode', 'Recently Added') and the white 'Watch Now' badge, the 'TOP 10' corner flags, and the 'BETA' outlined chip next to Games. The implementation adds things the reference does not show: a hover preview card (match %, action buttons) that stays expanded, left and right checkmark/chevron arrows, and the hero Play/More Info buttons.",
+      "missing": [
+        "pill-shaped active state on Home nav item",
+        "Kids profile link with icon",
+        "row page-indicator segment bars at top-right of each row",
+        "red bottom-center status badges (New Season / New Episode / Recently Added)",
+        "white 'Watch Now' badge",
+        "TOP 10 corner ribbon on tiles",
+        "BETA outlined chip next to Games heading",
+        "Games row tiles",
+        "Only on Netflix row",
+        "Top Searches row"
+      ],
+      "fix": "Add a rounded grey pill behind the active nav item. Add 'Kids' with its icon before the avatar. Add segmented indicator bars right-aligned with each row title. Overlay red badges on tile bottoms, centred, plus a white 'Watch Now' badge. Add a TOP 10 red flag in the top-right corner of tiles. Add a purple-outlined 'BETA' chip after 'Games'. Remove the persistent hover card and the arrow glyphs."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are dark and media-heavy. Reference tiles have about 8px rounded corners. Implementation tiles have square corners. The reference has generous vertical spacing between rows. The implementation's hover card adds a raised layer that the reference does not show.",
+      "fix": "Apply about 8px border-radius to tiles and keep about 50px of vertical spacing between rows."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "The near-black #141414 page and black nav are similar. The red Netflix wordmark matches. The reference's red badge and TOP 10 accents are missing. The reference has a purple BETA chip. The implementation adds a green match % in the hover card.",
+      "fix": "Add red (#E50914) badges and TOP 10 flags, and use a purple border on the BETA chip."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Sans-serif throughout, with bold row titles in a similar style. Reference row titles are slightly larger, about 26px. Implementation nav links are smaller and tighter, about 14px vs 17px, and the active item is bold without a pill.",
+      "fix": "Raise nav link size to about 17px with wider spacing, and row titles to about 26px semibold."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "Search and bell outline icons match. The reference uses a square blue smiley profile avatar plus a Kids icon. The implementation uses a green rounded avatar with the letter 'V'. Tile artwork is portrait poster art, but the reference uses landscape cover art with the title lockup and rounded corners. The implementation also has stray checkmark and chevron glyphs at the row edges.",
+      "fix": "Use landscape backdrop artwork with object-fit cover and rounded corners. Use a square profile avatar image. Remove the edge check/chevron glyphs."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly. The section heading 'TV Action & Adventure' matches and 'Games' is present. Missing copy: badge texts and BETA. The implementation adds empty-state sentences ('You haven't watched anything yet...', 'No games available...') that the reference does not show.",
+      "fix": "Add badge labels ('New Season', 'New Episode', 'Recently Added', 'Watch Now') and 'BETA'. Remove the empty-state copy rows."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "Every row: the implementation uses narrow portrait poster tiles (about 168×250); the reference uses wide 16:9 landscape tiles (about 350×197) with rounded corners",
+    "Tiles: the reference has red status badges at the bottom centre ('New Season', 'Recently Added', 'New Episode' + white 'Watch Now') and TOP 10 corner flags; the implementation has none",
+    "Continue Watching and Games sections: the implementation renders text-only empty placeholders where the reference's Games row shows a full tile carousel",
+    "Middle of the screen: the implementation shows an expanded hover preview card (play/+/like/chevron, 87% Match) overlapping the rows; the reference has no such card",
+    "Top of the content: the implementation shows the hero's Play/More Info/TV-14 controls; the reference starts directly with rows under the nav",
+    "Row headers: the reference has segmented page-indicator bars at the top right of each row; the implementation has none",
+    "Nav: the reference highlights 'Home' with a rounded grey pill; the implementation uses bold text only",
+    "Nav right: the reference has a 'Kids' entry with an icon before the avatar; the implementation lacks it",
+    "Games heading: the reference has an outlined 'BETA' chip; the implementation has none",
+    "TV Action & Adventure row in the implementation stops after 6 tiles, leaving the right half empty; the reference row fills the width and is cut off at the edge",
+    "Row edges: the implementation shows stray checkmark and chevron glyphs at the left and right of Trending Now"
+  ],
+  "fixes": [
+    "Switch row tiles to 16:9 landscape backdrops, about 350px wide, 8px radius, 8px gap, cut off at the right edge",
+    "Overlay red bottom-centre badges and a white 'Watch Now' badge, plus a red TOP 10 corner flag, on the relevant tiles",
+    "Hide rows with no data, or seed them, so that no 'You haven't watched…'/'No games…' text rows appear; render the Games row with tiles",
+    "Don't render the hover preview card by default, and remove the edge check/chevron glyphs",
+    "Add segmented page-indicator bars right-aligned on each row header line",
+    "Give the active nav item a rounded grey pill background; enlarge nav text to about 17px",
+    "Add a 'Kids' link with its icon left of the profile avatar; use a square avatar",
+    "Add an outlined 'BETA' chip after the Games heading",
+    "For this route state, start content with rows directly below the nav (no hero fragment)"
+  ],
+  "summary": "The implementation shares the Netflix nav and dark row structure but uses portrait tiles, has no badges, TOP 10 flags, page indicators, pill-style active nav or BETA chip, and adds a hover card, hero fragment and empty-state rows."
+}
+```

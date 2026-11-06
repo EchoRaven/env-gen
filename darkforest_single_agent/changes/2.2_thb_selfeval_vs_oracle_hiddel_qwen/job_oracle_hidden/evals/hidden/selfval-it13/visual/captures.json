@@ -1,0 +1,82 @@
+{
+ "landing": {
+  "route": "/",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/landing.png"
+ },
+ "login": {
+  "route": "/login",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/login.png"
+ },
+ "browse_home": {
+  "route": "/browse",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/browse_home.png"
+ },
+ "browse_home_rows": {
+  "route": "/browse",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/browse_home_rows.png"
+ },
+ "shows": {
+  "route": "/shows",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/shows.png"
+ },
+ "movies": {
+  "route": "/movies",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/movies.png"
+ },
+ "games": {
+  "route": "/games",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/games.png"
+ },
+ "new_and_popular": {
+  "route": "/new",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/new_and_popular.png"
+ },
+ "genre_category": {
+  "route": "/browse/genre/4",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/genre_category.png"
+ },
+ "browse_by_languages": {
+  "route": "/browse/languages",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/selfval-it13/visual/shots/browse_by_languages.png"
+ },
+ "my_list": {
+  "capture_missing": true,
+  "why": "Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_text(\"My List\", exact=True).first\n"
+ },
+ "title_detail": {
+  "capture_missing": true,
+  "why": "no button more info"
+ },
+ "title_episodes": {
+  "capture_missing": true,
+  "why": "no button more info"
+ },
+ "rate_dialog": {
+  "capture_missing": true,
+  "why": "no button more info"
+ },
+ "player": {
+  "capture_missing": true,
+  "why": "no button ^\\s*play\\b"
+ },
+ "player_controls": {
+  "capture_missing": true,
+  "why": "no button ^\\s*play\\b"
+ },
+ "account_menu": {
+  "capture_missing": true,
+  "why": "no account control"
+ },
+ "card_hover_preview": {
+  "capture_missing": true,
+  "why": "no rail poster in view"
+ },
+ "card_preview": {
+  "capture_missing": true,
+  "why": "no rail poster in view"
+ },
+ "shows_genres_menu": {
+  "capture_missing": true,
+  "why": "Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_text(re.compile(r\"^\\s*genres\", re.IGNORECASE)).first\n"
+ }
+}

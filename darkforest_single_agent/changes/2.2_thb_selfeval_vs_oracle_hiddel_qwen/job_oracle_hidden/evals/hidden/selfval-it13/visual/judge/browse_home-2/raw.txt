@@ -1,0 +1,27 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.02, "notes": "The implementation is a solid, uniform #141414 page with nothing on it. None of the reference structure appears: no top nav bar, no rounded inset hero card (~67px gutters, ~820px tall), and no titled horizontal carousel row below the hero.", "fix": "Render the page skeleton: a transparent top nav bar about 88px tall with the logo and links on the left and icons on the right, then an inset hero card with rounded corners spanning the content width with 67px side gutters, then a section heading and a horizontal row of 16:9 tiles with a segmented page indicator at the right."},
+    "components": {"score": 0.0, "notes": "No components rendered at all. Most likely a blank render (JS error, failed data fetch, or a route that doesn't match) rather than a designed empty state.", "fix": "Fix the /browse render failure so the route mounts the BrowseHome component, then build every component listed below.", "missing": ["NETFLIX red wordmark logo", "nav links (Home pill-active, Shows, Movies, Games, New & Popular, My List, Browse by Languages)", "search icon", "notifications bell", "Kids profile chip", "profile avatar with dropdown caret", "hero media card with video/backdrop", "mute/volume round button", "title-logo artwork lockup", "LIVE badge + start-time line", "metadata row (genre • year • seasons • rating)", "Play button (white pill with icon)", "More Info button (translucent gray pill)", "New Episode badge", "row heading", "row page indicator dashes", "horizontal carousel of rounded 16:9 tiles", "TOP 10 badge on tiles"]},
+    "style": {"score": 0.05, "notes": "Only the dark, flat base matches. None of the treatments appear: no rounded hero card with soft elevation, no pill buttons, no rounded tiles.", "fix": "Use about 16px radius on the hero card, about 8px on tiles and fully pill-shaped buttons and nav active state, plus a soft shadow on the hero."},
+    "color": {"score": 0.25, "notes": "The dark background (#141414) roughly matches the reference base. The red logo, red LIVE badge, white Play CTA, gray translucent secondary buttons and nav active pill are all absent.", "fix": "Add the #E50914 brand red on the logo and LIVE badge, a white Play button with black text, rgba(255,255,255,0.2) gray pills for More Info and the active nav, and a dark gradient over the hero's left side."},
+    "typography": {"score": 0.0, "notes": "No text is rendered.", "fix": "Use a sans font (Netflix Sans or a similar geometric sans): nav at about 17px regular in light gray, with the active item semibold white; hero subline at about 22px semibold; metadata at about 17px medium; row heading at about 26px semibold white."},
+    "iconography": {"score": 0.0, "notes": "No icons, logo, avatars or imagery are rendered.", "fix": "Add outline search, bell and volume icons, square avatars with rounded corners for Kids and profile, a filled play triangle, a hero backdrop at cover crop, and 16:9 rounded artwork tiles."},
+    "copy": {"score": 0.0, "notes": "None of the chrome labels are present.", "fix": "Add the nav labels 'Home', 'Shows', 'Movies', 'Games', 'New & Popular', 'My List', 'Browse by Languages', the buttons 'Play' and 'More Info', the 'Kids' label, the 'LIVE' and 'New Episode' badges, and the row titles."}
+  },
+  "similarity": 0.02,
+  "empty_state": true,
+  "deviations": [
+    "entire screen: implementation is a blank dark page; the reference's hero card, nav bar and content row never rendered",
+    "top: the reference's nav bar (logo, 7 links with a pill-active Home, search, bell, Kids and profile avatar) is absent",
+    "center: the reference's large rounded hero card (backdrop, title artwork, LIVE line, metadata, Play/More Info pills, volume button, New Episode badge) is absent",
+    "bottom: the reference's 'TV Action & Adventure'-style row heading with page indicator and horizontal tile carousel is absent"
+  ],
+  "fixes": [
+    "Debug why /browse renders blank (check the console for errors, the data fetch, the route mapping and auth guards) and make sure the BrowseHome component mounts",
+    "Seed or mock the featured title and row data so the hero and carousels have content",
+    "Build the top nav: red NETFLIX wordmark at left; links Home (gray pill active), Shows, Movies, Games, New & Popular, My List, Browse by Languages; at right, search, bell, Kids chip and avatar with caret",
+    "Build the inset hero card: 67px gutters, about 16px radius, full-cover backdrop with dark left gradient, title-logo artwork, red LIVE badge with time text, dot-separated metadata row, white Play pill and gray More Info pill, round volume button top-right, New Episode badge bottom-right",
+    "Build content rows: semibold heading at about 26px, a segmented page indicator at right, and a horizontal scroll of 16:9 tiles with rounded corners and an optional TOP 10 badge"
+  ],
+  "summary": "Implementation renders a blank dark page: none of the reference's nav bar, hero card, buttons or carousel row appear, so the design can't be compared."
+}

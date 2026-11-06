@@ -1,0 +1,71 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.35,
+      "notes": "Both pages use a dark top bar with the NETFLIX wordmark, horizontal nav links and right-side icons, and both show an expanded preview card over the grid. The reference page is 'Browse by Languages': a page title on the left, 'Select Your Preferences' with two dropdowns on the right, and a multi-row grid of 16:9 landscape tiles with no row headings. The implementation shows a billboard hero (title, match, synopsis, Play/More Info), titled horizontal rails ('Trending Now', 'Continue Watching', 'TV Action & Adventure') of 2:3 portrait posters, an empty-row message and a rail scroll chevron. The preview card is about 410px wide and sits flush at the left edge. In the reference it is about 435px wide, roughly 1.5× the tile it expands from, and floats above the row.",
+      "fix": "Render the held-hover state on a grid page: remove the hero, add an 'H1 page title + Select Your Preferences + 2 outlined dropdowns' header row, and lay out 6-column rows of 16:9 landscape tiles with about 8px gaps and about 75px vertical spacing. Scale the preview card to about 1.5× the tile, centered on it and lifted upward."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The preview card has the same general structure: artwork on top, then a round control row (play, secondary, thumbs, chevron), a maturity rating box, and genre tags separated by dots. Several differences: the second button is '+' where the reference shows a check, the buttons are about 30px instead of about 52px, and the chevron sits next to the others instead of at the far right. The card has no mute toggle over the artwork, no N badge and no title-art lockup. There is no '2 Seasons' count and no HD badge. The rating box sits at the far right of the button row when it should start the metadata row. The card adds a '92% Match + year' line that the reference doesn't have. Elsewhere on the page, the reference has the page heading, the preference dropdowns and the 'Live Now', 'Recently Added', 'New Season' and TOP 10 tile badges. The implementation adds a hero billboard, rail headings, a rail arrow and the 'Continue Watching' empty text.",
+      "missing": [
+        "mute toggle button over the preview video/art",
+        "N series badge and title-art lockup on the preview art",
+        "check (in My List) button state",
+        "far-right expand chevron button",
+        "seasons count + HD badge metadata row",
+        "Browse by Languages page heading",
+        "Select Your Preferences label + Original Language / English dropdowns",
+        "tile badges (Recently Added / Live Now / New Season ribbons, TOP 10 corner badge)"
+      ]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Both use a flat dark style with a raised preview card that has a slight radius. The reference controls are large, outlined circles with a 2px gray ring and generous padding. The implementation's controls are small and dense, the card padding is tight, and the active nav item is shown with bold text instead of the reference's gray pill.",
+      "fix": "Make the card buttons about 52px circles with a 2px rgba(255,255,255,.5) ring (play filled white), use about 20px card padding, and show the active nav item as a rounded gray pill."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "The dark #141414 base, the dark-gray card surface, the white play button and the red wordmark all match. The implementation adds a green '92% Match' accent that the reference card doesn't show. It also lacks the red tile ribbons, and its nav pill has no gray fill.",
+      "fix": "Remove the green match line from the card, add red ribbon badges on tiles, and give the active nav item a #333 pill fill."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use a sans-serif. The reference card text is large (about 18px rating, seasons and genres in white/light gray). The implementation's card text is about 13px. The nav is also smaller (about 14px against about 17px), and the reference's 34px page title has no equivalent.",
+      "fix": "Raise the card metadata and genre text to about 17–18px, nav links to about 17px, and add a 34px regular-weight page title."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "Both use line icons inside circles. The implementation uses '+' instead of a check, and its icons are tiny. Its tiles are portrait posters, while the reference uses 16:9 landscape tiles with title art. The preview art has no N logo or title lockup. The profile avatar is a letter tile, and the reference also has a Kids avatar link.",
+      "fix": "Switch the tiles to 16:9 backdrop art with title lockups, add the N badge, title art and a mute icon to the preview, use a check icon for in-list, and scale the icons to about 24px."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The nav labels match, but the implementation shows 'Home' as active instead of 'Browse by Languages' and has no 'Kids' link. It has no 'Browse by Languages', 'Select Your Preferences' or 'Original Language' copy. It adds 'Play', 'More Info', '92% Match' and the 'Continue Watching' empty text, and it has no 'N Seasons'.",
+      "fix": "Add a 'Kids' link beside the avatar, the page heading, the preference label and dropdown text, and 'N Seasons' on the card. Drop the match copy."
+    }
+  },
+  "similarity": 0.45,
+  "empty_state": false,
+  "deviations": [
+    "Page body: the implementation shows a hero billboard and titled rails of portrait posters. The reference is a languages grid of 16:9 landscape tiles under a 'Browse by Languages' heading with preference dropdowns.",
+    "Header right: the reference has 'Select Your Preferences' with 'Original Language' and 'English' dropdowns, which are absent in the implementation.",
+    "Preview card control row: the implementation's buttons are about 30px and include a '+' with the chevron placed inline. The reference has about 52px ringed buttons with a check and the chevron pushed to the far right.",
+    "Preview card art: the reference has an N badge, a title-art lockup and a mute toggle. The implementation shows bare artwork.",
+    "Preview card metadata: the reference shows 'TV-PG [box] 2 Seasons [HD]' in large type. The implementation puts the rating box at the right of the button row and adds a green '92% Match 2026' line.",
+    "Preview card placement and size: the implementation's card is flush at the left screen edge and overlaps the rail heading. The reference card floats, centered over its tile, at a larger scale.",
+    "Tiles: the reference has red 'Recently Added', 'Live Now' and 'New Season' ribbons and TOP 10 badges. The implementation's tiles have none.",
+    "Nav: the reference's active item is a gray pill on 'Browse by Languages' and there is a 'Kids' avatar link. The implementation shows bold 'Home' and no Kids link."
+  ],
+  "fixes": [
+    "Render this hover state on the Browse by Languages grid: page title, preference dropdowns, and 6-column 16:9 landscape tiles with no hero.",
+    "Rebuild the preview card: 16:9 art with an N badge, a title lockup and a bottom-right mute button. Below it, about 52px circular buttons (white filled play, check, thumbs-up) with the chevron right-aligned.",
+    "Card metadata row: outlined rating box + 'N Seasons' + an HD badge at about 18px. Then dot-separated genre tags at about 18px. Remove the match line.",
+    "Center the card over the hovered tile, scale it about 1.5×, shift it upward, and keep it off the screen edge.",
+    "Add red ribbon and TOP 10 badges on tiles.",
+    "Nav: use a gray pill for the active item, enlarge the link text, and add a Kids avatar link."
+  ],
+  "summary": "The implementation's hover card follows the same pattern, but its controls are undersized and it lacks the mute button, title art and seasons/HD badges. It also sits on a hero-and-portrait-rail home page, not the reference's landscape-tile language grid with preference dropdowns."
+}
+```

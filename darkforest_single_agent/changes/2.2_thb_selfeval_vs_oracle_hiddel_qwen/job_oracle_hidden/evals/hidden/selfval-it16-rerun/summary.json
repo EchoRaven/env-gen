@@ -1,0 +1,51 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/../job_selfval/runs/netflix__r0/snapshots/iter16/workspace",
+ "tag": "selfval-it16-rerun",
+ "parts": [
+  "api",
+  "ui"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 43,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 2,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 2,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 4,
+  "total": 5,
+  "failed": [
+   "walk did not crash"
+  ]
+ }
+}

@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Both use a full-bleed poster collage hero with centered headline + email form. The reference has a top header row with the NETFLIX wordmark at top-left and the language selector + Sign In at top-right. The implementation has no top-left logo; it puts a huge logo in the center of the hero instead. The reference hero ends at ~y=900 with a curved red/pink arc divider, followed by a dark band holding a promo banner card. The implementation's hero fills the whole viewport, with no arc and no banner below. The collage also differs: the reference uses a dense tilted mosaic of small landscape tiles, while the implementation uses a flat, untilted 4x2 grid of large portrait posters.",
+      "fix": "Move the NETFLIX wordmark to the header at top-left (~x=165, y=48, ~165px wide). Remove the large centered logo. End the hero at ~80% of the viewport with a curved red-to-pink gradient arc at the bottom edge. Below it, add a dark section with a centered promo banner card (~1480px wide). Replace the flat poster grid with a rotated mosaic of many small landscape tiles under a dark overlay."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: Sign In button, email input, Get Started button with chevron. Missing: header logo, language selector dropdown (icon + 'English' + caret), the price subheadline line, the promo banner (popcorn icon, title, subtitle, 'Learn More' button) and the curved arc divider. Added but not in the reference: a 'Sign In now.' link line below the form.",
+      "fix": "Add the language select (bordered, globe/translate icon, 'English', caret) to the left of Sign In. Add the subheadline under the H1. Put the prompt line above the form. Add the promo banner card with a popcorn illustration and a 'Learn More' button. Remove the 'Sign In now.' line.",
+      "missing": ["header NETFLIX logo (top-left)", "language selector dropdown", "price/cancel subheadline", "curved hero divider arc", "promo banner card with popcorn icon", "Learn More button"]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "The dark cinematic overlay treatment matches. The reference uses slightly rounded corners (4px) on buttons and the input, and a rounded (~16px) banner card. The implementation's Sign In button is a square outlined ghost button instead of a filled red one. The implementation also lacks the tilted-mosaic depth and the decorative arc gradient. Its posters are large and dominant, while the reference's background is busier but more uniformly dimmed.",
+      "fix": "Make Sign In a filled red button with ~4px radius. Give the input and Get Started a 4px radius. Darken the background overlay with a vignette. Add the arc gradient and the rounded banner card."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Same dark scheme and Netflix red for the CTA. Some implementation posters are much brighter (Spider-Man, Toy Story), so the background competes with the text, while the reference dims everything evenly. Missing: the red/pink arc glow and the deep navy-to-purple gradient banner surface. The Sign In button should be red, not a transparent outline.",
+      "fix": "Apply an even ~60-70% black overlay plus a top/bottom gradient over the collage. Fill Sign In with #E50914. Add the navy/purple banner surface and the red-pink arc stroke."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use a bold sans headline, centered. The reference's H1 is heavier and larger (~56-64px, 2 lines), followed by a bold ~20px subheadline and a regular ~17px prompt. The implementation has a slightly lighter H1, no subheadline, and a small gray caption under the form. Its Get Started text is regular weight and small, while the reference's is bold and ~24px.",
+      "fix": "Set the H1 to ~60px weight 800-900. Add a ~20px bold subheadline. Make the prompt text ~17px white above the form. Make the Get Started label ~24px semibold/bold."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "Logo placement and scale are wrong: a huge centered wordmark instead of a ~165px header logo. The translate/globe icon in the language selector and the popcorn illustration are missing. The chevron in the CTA is present but tiny. The collage tiles have the wrong aspect and lack rotation.",
+      "fix": "Render the wordmark at header size top-left. Add the translate icon in the language select. Add the popcorn bucket illustration to the left of the banner. Enlarge the CTA chevron to match the text height."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "Headline wording differs: the implementation uses 'Watch anywhere. Cancel anytime.', not the reference's 'Unlimited movies, TV shows, and more'. The 'Starts at $8.99. Cancel anytime.' subheadline is missing. The prompt 'Ready to watch? Enter your email to create or restart your membership.' is replaced by 'Ready to watch? Sign In now.' Banner copy ('The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.' / 'Learn More') is absent. The 'Email address', 'Get Started' and 'Sign In' labels match.",
+      "fix": "Use the H1 'Unlimited movies, TV shows, and more', the subheadline 'Starts at $8.99. Cancel anytime.', the prompt 'Ready to watch? Enter your email to create or restart your membership.', and the banner copy plus 'Learn More'."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "header top-left: reference shows the NETFLIX wordmark logo; implementation has no header logo and instead places a huge wordmark in the center of the hero",
+    "bottom of page: reference has a curved red/pink arc divider and a dark section with a rounded promo banner card (popcorn icon, two-line copy, 'Learn More' button); implementation has none of this, and the hero fills the whole viewport",
+    "header top-right: reference has a bordered language dropdown ('English' with translate icon and caret) next to a filled red Sign In button; implementation shows only an outlined square ghost 'Sign In' button",
+    "hero text: reference H1 'Unlimited movies, TV shows, and more' + bold subheadline 'Starts at $8.99. Cancel anytime.' + prompt line ABOVE the form; implementation has a different H1, no subheadline, and puts a 'Ready to watch? Sign In now.' link BELOW the form",
+    "background: reference uses a dense, rotated mosaic of small landscape tiles evenly dimmed; implementation uses a flat 4x2 grid of large upright posters, some barely dimmed (right column very bright)",
+    "CTA: reference 'Get Started' is large bold text with a big chevron and 4px radius; implementation's is smaller regular-weight text with a tiny chevron"
+  ],
+  "fixes": [
+    "Move the NETFLIX wordmark to the header at top-left at ~165px wide and remove the oversized centered logo",
+    "Add a language selector (translate icon, 'English', caret, 1px gray border, 4px radius) left of Sign In, and make Sign In a filled red #E50914 button with a 4px radius",
+    "Change the hero copy to H1 'Unlimited movies, TV shows, and more' (~60px, extra-bold), subheadline 'Starts at $8.99. Cancel anytime.' (bold ~20px), then the prompt 'Ready to watch? Enter your email to create or restart your membership.' above the form; remove 'Sign In now.'",
+    "Enlarge Get Started to ~24px bold with a larger chevron; match the input/button heights (~60px) and the 4px radius",
+    "End the hero at ~80vh with a curved red-to-pink gradient arc border at the bottom",
+    "Add a dark section below with a rounded (~16px) navy-to-purple gradient banner card: popcorn illustration at left, 'The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.', and a gray 'Learn More' button at right",
+    "Replace the poster grid with a tilted mosaic of many small landscape tiles under a uniform dark overlay/vignette"
+  ],
+  "summary": "Same Netflix landing idea (dark collage hero, centered email + Get Started), but it misses the header logo, language selector, subheadline, arc divider and promo banner, and uses a different headline, logo placement and background treatment."
+}

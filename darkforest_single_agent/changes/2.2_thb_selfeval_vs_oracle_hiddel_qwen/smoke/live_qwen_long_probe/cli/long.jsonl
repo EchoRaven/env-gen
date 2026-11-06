@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a1aa78-9c7c-7dd2-9565-489cdd56737f"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"\n\nAMBER-7319-MAPLE"}}
+{"type":"turn.completed","usage":{"input_tokens":199889,"cached_input_tokens":4704,"cache_write_input_tokens":194432,"output_tokens":51,"reasoning_output_tokens":38}}

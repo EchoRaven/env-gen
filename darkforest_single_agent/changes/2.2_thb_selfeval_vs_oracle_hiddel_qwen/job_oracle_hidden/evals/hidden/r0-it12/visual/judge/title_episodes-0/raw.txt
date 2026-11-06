@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Both show a centered dark modal (~1080px wide) over a dimmed home page, scrolled to an Episodes section with a vertical list of episode rows separated by dividers. Row column order is different. The reference goes episode number → thumbnail → text block. The implementation goes thumbnail → number → text. In the reference the duration sits on the title line, right-aligned at about x=1366, inset from the row edge. In the implementation it is vertically centred at the far right edge. In the reference the metadata ('This Show is: …') sits in a right column beside the synopsis. In the implementation 'Genres:' sits on its own line under the synopsis. Behind the modal, the reference hero is an inset card with rounded corners. The implementation hero is full-bleed.",
+      "fix": "Reorder each episode row to [number ~50px column, centred] → [16:9 thumbnail ~170px] → [text block]. Put the duration on the same baseline as the title, right-aligned, leaving ~80px of right padding. Move the show metadata into a right-hand column beside the synopsis. Make the background hero an inset rounded card."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Matching: Episodes heading, numbered rows, thumbnails, titles, durations, descriptions, dividers and a highlighted row. Differences: the implementation shows a play-circle overlay on every thumbnail, while the reference shows one only on the hovered row's thumbnail. The implementation has a '4 Seasons' label and a native <select> dropdown where the reference shows only plain right-aligned text (the show/season name). In the header behind the modal, the 'Home' nav item has no active pill and there is no 'Kids' profile entry.",
+      "missing": ["active pill on the 'Home' nav item", "'Kids' link in the header", "plain right-aligned season/title label in the Episodes header (replaced by a select)"],
+      "fix": "Show the thumbnail play overlay only on hover. Replace the native select and the 'N Seasons' label with a plain-text label, or a borderless dark dropdown styled like Netflix's. Add the rounded pill background to the active nav item and the Kids link in the header."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat dark modal with hairline dividers and a lighter grey fill on the active/hovered row. The reference row highlight has slightly rounded corners and the rows are airier, with more padding and larger text. The implementation's native select with a white border feels off-language. The implementation's buttons are square-cornered, while the reference buttons are pill-shaped (Play / More Info).",
+      "fix": "Round the corners of the hero Play/More Info buttons into pills. Give the highlighted row a ~4px radius. Increase row vertical padding and text size. Restyle or remove the bordered select."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark #181818 modal on a dimmed backdrop, white titles, grey dividers and a lighter grey active row all match. The implementation's description text is dimmer grey, where the reference uses near-white. The implementation adds a green '92% Match' on the hero, which the reference does not show.",
+      "fix": "Lighten the episode descriptions to ~#d2d2d2. Drop the green match text from the hero metadata."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use sans-serif type. The reference episode titles are bold, about 17px. The implementation's titles are regular weight, about 15px. Reference descriptions are about 15px near-white with comfortable line height. Implementation descriptions are about 13px grey and tight. Reference episode numbers are large (~24px) and light-coloured. Implementation numbers are smaller and grey. The reference duration is ~17px white. The implementation's duration is small grey text.",
+      "fix": "Episode title: 17px semibold white. Description: 15px, line-height 1.5, #d2d2d2. Number: 24px, #d2d2d2. Duration: 16px white, on the title line."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use 16:9 thumbnails with slightly rounded corners and outline header icons. The implementation puts small filled play circles in the bottom-right corner of every thumbnail. The reference has one large centred outlined play circle, and only on the hovered row. The profile avatar differs, and the Kids avatar is absent.",
+      "fix": "Remove the persistent play badges. On row hover, show a centred ~50px outlined white play circle on the thumbnail."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "'Episodes', durations in 'Nm' format, and 'Play' / 'More Info' all match. The implementation's 'Genres:' label differs from the reference's 'This Show is:' style metadata label. The implementation also adds a '4 Seasons' label.",
+      "fix": "Use plain-text metadata labels styled like the reference ('This Show is:' in the right column). Show the season/title name as plain text in the Episodes header."
+    }
+  },
+  "similarity": 0.73,
+  "empty_state": false,
+  "deviations": [
+    "Episode rows: the implementation puts the thumbnail before the episode number; the reference puts the number in a left column, then the thumbnail.",
+    "Episode rows: the implementation centres the duration vertically at the far right; the reference puts it on the title line, right-aligned and inset.",
+    "Episode thumbnails: the implementation shows a play badge on every thumbnail; the reference shows a centred play circle only on the hovered row.",
+    "Episode text: the implementation uses regular-weight titles and small grey descriptions; the reference uses bold titles and larger near-white descriptions.",
+    "Episodes header right side: the implementation shows '4 Seasons' and a bordered native select; the reference shows plain right-aligned text.",
+    "Modal top metadata: the implementation puts 'Genres:' under the synopsis; the reference has a right-hand metadata column ('This Show is: …').",
+    "Background header: the implementation has no pill highlight on 'Home' and no 'Kids' entry.",
+    "Background hero: the implementation is full-bleed with square buttons; the reference is an inset rounded card with pill buttons."
+  ],
+  "fixes": [
+    "Reorder each episode row to number → thumbnail → text, with the duration on the title line, right-aligned.",
+    "Make episode titles bold (~17px) and descriptions ~15px light grey with 1.5 line height; make numbers ~24px.",
+    "Remove the always-on play badges and show a centred outlined play circle only on hover.",
+    "Replace the season select and 'N Seasons' label with a plain-text right-aligned label.",
+    "Move the show metadata into a right column beside the synopsis.",
+    "Add the active pill on 'Home' and the Kids link in the header; make the background hero an inset rounded card with pill-shaped Play/More Info buttons."
+  ],
+  "summary": "The modal structure and Episodes list match, but row column order, typography weight and size, the persistent play badges and the native season select all depart from the reference."
+}

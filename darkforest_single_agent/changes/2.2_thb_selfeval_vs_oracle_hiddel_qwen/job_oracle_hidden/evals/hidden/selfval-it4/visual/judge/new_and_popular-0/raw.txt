@@ -1,0 +1,76 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The top-nav chrome, the dark full-bleed page, the left gutter of about 67px and the stack of horizontal carousels all match. The section order is wrong. The reference goes New on Netflix → Top 10 TV Shows → Top 10 Movies → Coming This Week. The implementation puts New on Netflix third. The Top 10 TV row also uses a different skeleton: it shows landscape 16:9 tiles with the numbers overlapping them, while the reference uses the same big-number-plus-portrait-poster pairing as the Movies row. New on Netflix tiles are larger in the implementation (about 352×198 against about 294×165 in the reference).",
+      "fix": "Reorder the sections to New on Netflix, Top 10 TV Shows in the U.S. Today, Top 10 Movies in the U.S. Today, Coming This Week. Render the Top 10 TV row with the same layout as the Movies row: a large rank numeral on the left and a portrait 2:3 poster to its right, with no overlap. Size the New on Netflix tiles so about 6.2 fit across the viewport (about 294px wide, 16:9)."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The nav items match in count and order: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages. Search, the bell, the profile avatar with its caret and the four row titles are all present. Several things are missing. There are no red badge pills (New Season / New Episode / Recently Added), no TOP 10 corner badge and no white 'Watch Now' tag. The Kids profile link next to the avatar is absent. The row page-indicator dashes at the top right of each row are absent. The pill-shaped highlight on the active nav item has been replaced by bold text only. The screenshot also catches a hover-expanded card with play/chevron buttons, match %, maturity rating and genres, plus left/right carousel arrows. None of these appear in the reference state.",
+      "missing": [
+        "red status badges on tiles (New Season / New Episode / Recently Added)",
+        "TOP 10 red corner badge on tiles",
+        "'Watch Now' white tag next to the badge",
+        "Kids profile link with icon beside the avatar",
+        "row pagination indicator dashes (top-right of each row)",
+        "pill background highlight on the active 'New & Popular' nav item"
+      ],
+      "fix": "Add a bottom-centred red pill badge (white bold text) to the tiles. Add a red 'TOP 10' square badge at the top-right of each Top 10 title tile. Add the Kids icon and label before the avatar. Add segmented dash page indicators to the right of each row title. Give the active nav item a rounded grey pill background. Make sure the default view shows no hover-expanded card and no carousel arrows."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are flat, dark and dense, with slightly rounded tiles and no shadows. In the reference, the rank numerals are filled near-black with a grey outline, so they read as solid shapes behind the posters. In the implementation they are thin outlines only, and in the TV row they sit over the artwork. The rounded nav pill is missing.",
+      "fix": "Fill the rank numerals with #141414 and give them a roughly 3px #595959 stroke, placed beside the poster rather than over it. Add a rounded-pill hover/active background to the nav items."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The near-black #141414 base, white text and red wordmark match. The reference also uses Netflix red as an accent on the badges, which is absent in the implementation, so its accent usage is much lower. The active nav pill is a dark grey (#333-ish) surface that the implementation lacks.",
+      "fix": "Use #E50914 on the badge pills and TOP 10 badges, and a #333-ish fill for the active nav pill."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use the same sans character and white row titles. The implementation's type is noticeably smaller and tighter: the nav is about 13px against about 17px in the reference, and the row titles are about 18px against about 26px. The reference's active nav item is semibold inside a pill, while the implementation shows only a bold weight change.",
+      "fix": "Raise nav labels to about 17px regular (active item semibold) with wider spacing between items, and set row titles to about 26px medium weight."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The line-style search and bell icons, the square rounded avatar and the 16:9 and 2:3 crops in New on Netflix and Top 10 Movies match. In the reference, the artwork carries title logo lockups. The implementation shows bare key art with no title treatment. The TV Top 10 row has the wrong aspect ratio (landscape instead of portrait). There is no Kids icon.",
+      "fix": "Overlay title-logo artwork on the tiles, use portrait 2:3 posters in the Top 10 TV row, and add the Kids icon."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels and the section headings 'New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week' match exactly. The 'Kids' label and the badge copy ('New Season', 'New Episode', 'Recently Added', 'Watch Now', 'TOP 10') are missing.",
+      "fix": "Add the 'Kids' label and the badge strings 'New Season', 'New Episode', 'Recently Added', 'Watch Now' and 'TOP 10'."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Section order: the reference starts with 'New on Netflix' at the top; the implementation places it third, below both Top 10 rows",
+    "Top 10 TV Shows row: the reference pairs a large solid numeral with a portrait poster; the implementation uses landscape tiles with outline numerals overlapping the art",
+    "All tiles: the reference's red badge pills (New Season / New Episode / Recently Added) and the top-right TOP 10 badges are absent",
+    "Tile artwork: the reference shows title-logo lockups over the art; the implementation shows bare images",
+    "Top 10 TV row, third tile: the implementation shows a hover-expanded preview card (play button, chevron, 87% match, rating, genres) and carousel arrows on both edges, which the reference state does not have",
+    "Header right: the reference has a Kids icon and 'Kids' label before the avatar; the implementation omits it",
+    "Header nav: the reference highlights 'New & Popular' with a rounded grey pill and uses larger (~17px) labels; the implementation uses bold text only at ~13px",
+    "Row headers: the reference has page-indicator dashes at the top right of each row; the implementation has none",
+    "Row titles: the implementation is ~18px against ~26px in the reference",
+    "Rank numerals: the reference fills them dark with a grey stroke; the implementation uses thin outlines only",
+    "New on Netflix tiles: the implementation's are larger (~352px wide against ~294px)"
+  ],
+  "fixes": [
+    "Reorder the sections to: New on Netflix, Top 10 TV Shows, Top 10 Movies, Coming This Week",
+    "Render the Top 10 TV row like the Movies row: a solid dark numeral with a grey stroke, then a portrait 2:3 poster to its right with no overlap",
+    "Add a bottom-centred red #E50914 badge pill to the tiles (New Season / New Episode / Recently Added) and a red TOP 10 corner badge on Top 10 titles",
+    "Make sure the default render shows no hover-expanded card and no carousel arrows",
+    "Add a rounded grey pill behind the active nav item and raise the nav font to ~17px",
+    "Add the Kids icon and label before the profile avatar",
+    "Increase row titles to ~26px and add the page-indicator dashes at each row's top right",
+    "Shrink the New on Netflix tiles to ~294×165",
+    "Overlay title-logo artwork on the tiles"
+  ],
+  "summary": "The Netflix-style dark carousel screen is clearly related, but the section order is wrong, the Top 10 TV row uses the wrong tile format, all badges and the nav pill are missing, the type is undersized, and the screenshot catches a hover state."
+}
+```

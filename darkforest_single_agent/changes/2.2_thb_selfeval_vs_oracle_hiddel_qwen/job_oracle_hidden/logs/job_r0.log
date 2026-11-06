@@ -1,0 +1,83 @@
+[2026-11-05T14:38:45] iter1 attempt 0 (new session)
+[2026-11-05T15:44:36] iter 1 submitted: items=174 cmds=118 wall=3950.6s usage={'input_tokens': 12590171, 'cached_input_tokens': 12310368, 'cache_write_input_tokens': 186592, 'output_tokens': 141959, 'reasoning_output_tokens': 49912}
+[2026-11-05T15:44:55] dev evaluation of iter 1: passed=False {'checks_passed': 2, 'checks_total': 3, 'endpoints_2xx': 0, 'endpoints_total': 0, 'chain_steps_ok': 0, 'chain_steps_total': 0}
+[2026-11-05T15:44:55] hidden evaluation of iter 1 started (results stay outside the sandbox)
+[2026-11-05T15:44:55] iter2 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T15:59:00] iter 2 submitted: items=71 cmds=41 wall=845.3s usage={'input_tokens': 16389698, 'cached_input_tokens': 15802304, 'cache_write_input_tokens': 462560, 'output_tokens': 163446, 'reasoning_output_tokens': 63093}
+[2026-11-05T15:59:11] dev evaluation of iter 2: passed=False {'checks_passed': 2, 'checks_total': 3, 'endpoints_2xx': 0, 'endpoints_total': 0, 'chain_steps_ok': 0, 'chain_steps_total': 0}
+[2026-11-05T15:59:11] hidden evaluation of iter 2 started (results stay outside the sandbox)
+[2026-11-05T15:59:11] iter3 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:05:54] iter 3 submitted: items=30 cmds=14 wall=403.0s usage={'input_tokens': 16993108, 'cached_input_tokens': 16374624, 'cache_write_input_tokens': 482944, 'output_tokens': 180691, 'reasoning_output_tokens': 77169}
+[2026-11-05T16:06:27] dev evaluation of iter 3: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 7, 'chain_steps_total': 8}
+[2026-11-05T16:06:27] hidden evaluation of iter 3 started (results stay outside the sandbox)
+[2026-11-05T16:06:27] iter4 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:17:26] iter 4 submitted: items=48 cmds=22 wall=658.8s usage={'input_tokens': 18903912, 'cached_input_tokens': 18228000, 'cache_write_input_tokens': 519008, 'output_tokens': 205684, 'reasoning_output_tokens': 93356}
+[2026-11-05T16:17:54] dev evaluation of iter 4: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:17:54] hidden evaluation of iter 4 started (results stay outside the sandbox)
+[2026-11-05T16:17:54] iter5 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:22:18] iter 5 submitted: items=30 cmds=16 wall=264.3s usage={'input_tokens': 20713236, 'cached_input_tokens': 20004544, 'cache_write_input_tokens': 539392, 'output_tokens': 214661, 'reasoning_output_tokens': 99147}
+[2026-11-05T16:22:31] dev evaluation of iter 5: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:22:31] hidden evaluation of iter 5 started (results stay outside the sandbox)
+[2026-11-05T16:22:31] iter6 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:27:49] iter 6 submitted: items=17 cmds=8 wall=318.1s usage={'input_tokens': 21839457, 'cached_input_tokens': 21106848, 'cache_write_input_tokens': 553504, 'output_tokens': 225795, 'reasoning_output_tokens': 106901}
+[2026-11-05T16:28:06] dev evaluation of iter 6: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:28:06] hidden evaluation of iter 6 started (results stay outside the sandbox)
+[2026-11-05T16:28:06] iter7 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:35:24] iter 7 submitted: items=20 cmds=9 wall=438.8s usage={'input_tokens': 23398277, 'cached_input_tokens': 22640352, 'cache_write_input_tokens': 570752, 'output_tokens': 240551, 'reasoning_output_tokens': 118335}
+[2026-11-05T16:35:37] dev evaluation of iter 7: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:35:37] hidden evaluation of iter 7 started (results stay outside the sandbox)
+[2026-11-05T16:35:37] iter8 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:46:01] iter 8 submitted: items=35 cmds=17 wall=623.5s usage={'input_tokens': 26696383, 'cached_input_tokens': 25892384, 'cache_write_input_tokens': 597408, 'output_tokens': 259073, 'reasoning_output_tokens': 130978}
+[2026-11-05T16:46:20] dev evaluation of iter 8: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:46:20] hidden evaluation of iter 8 started (results stay outside the sandbox)
+[2026-11-05T16:46:20] iter9 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:51:21] iter 9 submitted: items=20 cmds=8 wall=301.1s usage={'input_tokens': 28733086, 'cached_input_tokens': 27907264, 'cache_write_input_tokens': 609952, 'output_tokens': 267274, 'reasoning_output_tokens': 135122}
+[2026-11-05T16:51:42] dev evaluation of iter 9: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:51:42] hidden evaluation of iter 9 started (results stay outside the sandbox)
+[2026-11-05T16:51:42] iter10 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T16:57:31] iter 10 submitted: items=20 cmds=9 wall=349.0s usage={'input_tokens': 30740465, 'cached_input_tokens': 29892352, 'cache_write_input_tokens': 622496, 'output_tokens': 278294, 'reasoning_output_tokens': 141231}
+[2026-11-05T16:57:45] dev evaluation of iter 10: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T16:57:45] hidden evaluation of iter 10 started (results stay outside the sandbox)
+[2026-11-05T16:57:45] iter11 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:03:04] iter 11 submitted: items=23 cmds=11 wall=318.8s usage={'input_tokens': 33262125, 'cached_input_tokens': 32391744, 'cache_write_input_tokens': 635040, 'output_tokens': 287377, 'reasoning_output_tokens': 144405}
+[2026-11-05T17:03:24] dev evaluation of iter 11: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:03:24] hidden evaluation of iter 11 started (results stay outside the sandbox)
+[2026-11-05T17:03:24] iter12 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:06:14] iter 12 submitted: items=19 cmds=9 wall=169.6s usage={'input_tokens': 35515172, 'cached_input_tokens': 34626144, 'cache_write_input_tokens': 642880, 'output_tokens': 291687, 'reasoning_output_tokens': 146870}
+[2026-11-05T17:06:23] dev evaluation of iter 12: passed=False {'checks_passed': 2, 'checks_total': 3, 'endpoints_2xx': 0, 'endpoints_total': 0, 'chain_steps_ok': 0, 'chain_steps_total': 0}
+[2026-11-05T17:06:23] hidden evaluation of iter 12 started (results stay outside the sandbox)
+[2026-11-05T17:06:23] iter13 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:09:09] iter 13 submitted: items=10 cmds=4 wall=165.7s usage={'input_tokens': 36572199, 'cached_input_tokens': 35672000, 'cache_write_input_tokens': 649152, 'output_tokens': 296879, 'reasoning_output_tokens': 150818}
+[2026-11-05T17:09:23] dev evaluation of iter 13: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:09:23] hidden evaluation of iter 13 started (results stay outside the sandbox)
+[2026-11-05T17:09:23] iter14 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:11:28] iter 14 submitted: items=9 cmds=4 wall=125.2s usage={'input_tokens': 37659864, 'cached_input_tokens': 36749216, 'cache_write_input_tokens': 655424, 'output_tokens': 300662, 'reasoning_output_tokens': 153287}
+[2026-11-05T17:11:41] dev evaluation of iter 14: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:11:41] hidden evaluation of iter 14 started (results stay outside the sandbox)
+[2026-11-05T17:11:41] iter15 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:29:04] dev evaluation of iter 14: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:29:04] iter15 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:33:48] iter 15 submitted: items=22 cmds=9 wall=284.0s usage={'input_tokens': 40281750, 'cached_input_tokens': 39035360, 'cache_write_input_tokens': 951776, 'output_tokens': 340258, 'reasoning_output_tokens': 180736}
+[2026-11-05T17:34:07] dev evaluation of iter 15: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:34:07] hidden evaluation of iter 15 started (results stay outside the sandbox)
+[2026-11-05T17:34:07] iter16 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:47:59] iter 16 submitted: items=43 cmds=21 wall=832.0s usage={'input_tokens': 42802137, 'cached_input_tokens': 41495552, 'cache_write_input_tokens': 992544, 'output_tokens': 368980, 'reasoning_output_tokens': 203891}
+[2026-11-05T17:48:11] dev evaluation of iter 16: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:48:11] hidden evaluation of iter 16 started (results stay outside the sandbox)
+[2026-11-05T17:48:11] iter17 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:54:14] iter 17 submitted: items=14 cmds=6 wall=363.2s usage={'input_tokens': 43833534, 'cached_input_tokens': 42503776, 'cache_write_input_tokens': 1008224, 'output_tokens': 381624, 'reasoning_output_tokens': 214265}
+[2026-11-05T17:54:26] dev evaluation of iter 17: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:54:26] hidden evaluation of iter 17 started (results stay outside the sandbox)
+[2026-11-05T17:54:26] iter18 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T17:58:22] iter 18 submitted: items=11 cmds=4 wall=236.1s usage={'input_tokens': 44691854, 'cached_input_tokens': 43344224, 'cache_write_input_tokens': 1020768, 'output_tokens': 388884, 'reasoning_output_tokens': 219720}
+[2026-11-05T17:58:35] dev evaluation of iter 18: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T17:58:35] hidden evaluation of iter 18 started (results stay outside the sandbox)
+[2026-11-05T17:58:35] iter19 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T18:09:14] iter 19 submitted: items=29 cmds=13 wall=638.7s usage={'input_tokens': 47115877, 'cached_input_tokens': 45729152, 'cache_write_input_tokens': 1045856, 'output_tokens': 410255, 'reasoning_output_tokens': 235431}
+[2026-11-05T18:09:28] dev evaluation of iter 19: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T18:09:28] hidden evaluation of iter 19 started (results stay outside the sandbox)
+[2026-11-05T18:09:28] iter20 attempt 0 (resume 01a1ad38-895c-7ee3-b9d3-85fb2471f421)
+[2026-11-05T18:16:43] iter 20 submitted: items=11 cmds=4 wall=435.1s usage={'input_tokens': 48221821, 'cached_input_tokens': 46815776, 'cache_write_input_tokens': 1061536, 'output_tokens': 424669, 'reasoning_output_tokens': 248224}
+[2026-11-05T18:16:55] dev evaluation of iter 20: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-05T18:16:55] hidden evaluation of iter 20 started (results stay outside the sandbox)
+[2026-11-05T18:20:44] job done

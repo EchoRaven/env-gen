@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both show a centered dark modal over a dimmed Netflix home page, with an 'Episodes' header and a vertical numbered episode list (number, thumbnail, title and duration, synopsis). Differences: the reference modal is much wider (about 1085px, x≈418–1502) and the implementation's is about 780px. The reference is scrolled so the synopsis sits at the top edge and the episode rows fill the viewport. The implementation is less scrolled, so the title lockup, buttons and metadata still take the top third. Reference rows are about 145px tall; implementation rows are about 95px.",
+      "fix": "Widen the modal to about 1085px (about 56vw) with about 53px inner padding. Make each episode row about 145px tall. For this scrolled state, scroll so the synopsis is at the top and the episode list fills the view."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "The 'Episodes' heading, numbered rows, thumbnails, titles, durations and synopses are all present. In the reference, the top right of the Episodes header is plain season-name text. The implementation shows a boxed 'Season 1' select dropdown there. In the reference, only the first row is highlighted with a lighter grey block, and the other rows are separated by hairline dividers. The implementation puts every row on its own filled card with gaps between them, and highlights row 2 instead.",
+      "missing": [
+        "hairline dividers between episode rows",
+        "plain-text season label at the top right of the Episodes header (implementation uses a boxed select instead)",
+        "current-episode highlight on row 1"
+      ],
+      "fix": "Replace the boxed select with right-aligned plain text (about 20px, white). Remove the per-row card backgrounds and draw a 1px #404040 divider under each row. Give only the current or first episode a #333 background with a slight radius."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "The flat dark Netflix modal language matches. The reference list is airy, with tall rows, large thumbnails, generous padding and divider-separated rows. The implementation is compact, with small cards stacked on a filled background and gaps between them, so it reads denser and more boxy.",
+      "fix": "Increase row padding to about 24px vertically. Use divider-separated rows on the modal background (#181818) instead of separate cards."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a dark #181818-style modal with white titles, light grey synopses and a dimmed backdrop. In the implementation every row card is a lighter #222 fill and row 2 is highlighted. In the reference, only row 1 has a #2f2f2f highlight and the other rows sit on the base surface. Implementation durations are dim grey; reference durations are near-white.",
+      "fix": "Make row backgrounds transparent apart from the active row (#333). Set durations to #fff at about 18px."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use sans-serif type. Reference episode titles are bold (about 18px), episode numbers are about 26px light, durations about 18px, and synopses about 15px with 1.5 line height that wraps to two lines. In the implementation, titles are regular weight (about 16px), synopses are small (about 12px) single lines, and durations are tiny (about 11px). The 'Episodes' heading is about 26px bold in the reference and smaller in the implementation.",
+      "fix": "Set episode titles to 18px bold, synopses to 15px #d2d2d2 at 1.5 line height, durations to 18px, the 'Episodes' heading to 26px bold, and episode numbers to 26px."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Thumbnails are 16:9 cover crops in both. Reference thumbnails are about 170×96 with a slight radius. Implementation thumbnails are about 128×72. Both use the same top-right nav icons (search, bell, avatar).",
+      "fix": "Enlarge episode thumbnails to about 170×96 with a 4px radius."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "'Episodes' heading and the 'NNm' duration format match. The season control reads 'Season 1' with a chevron, where the reference shows the season or series name as plain text.",
+      "fix": "Show the season or series name as plain text instead of 'Season 1 ▾'."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "modal width: the implementation modal is about 780px wide; the reference is about 1085px, so the content column and row widths are much narrower",
+    "scroll position: the implementation still shows the title lockup, the Play/+/thumb buttons and the metadata at the top; the reference is scrolled so the synopsis is at the top edge and the episode list fills the modal",
+    "episode rows: the implementation draws each row as a separate filled card with gaps; the reference uses rows on the modal background separated by hairline dividers",
+    "active row: the implementation highlights row 2; the reference highlights row 1 with a lighter grey block",
+    "Episodes header, right side: the implementation has a boxed 'Season 1' select; the reference has plain right-aligned text",
+    "row typography: implementation episode titles are regular weight, not bold; synopses are about 12px instead of about 15px; durations are tiny and grey instead of about 18px white",
+    "thumbnails and row height: implementation thumbnails are about 128×72 and rows about 95px tall, versus about 170×96 and about 145px in the reference"
+  ],
+  "fixes": [
+    "Widen the modal to about 1085px and set the scrolled state so the episode list fills the viewport",
+    "Remove the per-row card fills and gaps; add a 1px #404040 bottom divider to each row; highlight only the active or first episode with a #333 background",
+    "Make episode rows about 145px tall with about 170×96 thumbnails and episode numbers about 26px",
+    "Set episode titles to 18px bold, synopses to 15px light grey with wrapping and 1.5 line height, and durations to 18px white",
+    "Replace the 'Season 1' select with plain right-aligned text (about 20px, white) in the Episodes header, and set the 'Episodes' heading to about 26px bold"
+  ],
+  "summary": "The episode-list structure is the same, but the implementation's modal is narrower, its rows are compact separate cards instead of tall divider-separated rows, its typography is lighter and smaller, and it uses a boxed season select instead of a plain label."
+}
+```

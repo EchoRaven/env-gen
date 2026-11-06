@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Both use a full-bleed poster-collage hero with centered headline and email+CTA row. In the reference, the header has the logo top-left and the language selector plus Sign In top-right. The implementation drops the logo from the header and moves it to the hero center. The reference collage is a tilted, perspective mosaic of many small landscape and portrait tiles. The implementation uses a flat 4×2 grid of large upright posters. The reference has a curved red/purple arc divider at about 82% of the height, followed by a promo banner row on black. Neither appears in the implementation, where the hero fills the whole viewport.",
+      "fix": "Put the NETFLIX wordmark top-left (~165px from the left edge) and the language select + Sign In top-right. Replace the flat 4×2 grid with a rotated, perspective mosaic of many small tiles under a dark vignette. End the hero at ~82% of the viewport with a curved arc divider (red-to-purple gradient stroke), and put the promo banner row below it on black."
+    },
+    "components": {
+      "score": 0.45,
+      "missing": [
+        "Header logo (top-left)",
+        "Language selector dropdown ('English' with translate icon and caret)",
+        "Red filled Sign In button",
+        "Price subheadline ('Starts at $X. Cancel anytime.')",
+        "Helper line above the email form",
+        "Curved arc section divider",
+        "Promo banner card (popcorn illustration, title + subtitle, 'Learn More' button)"
+      ],
+      "notes": "Present: Sign In button (outlined instead of red filled), email input, and a Get Started CTA with chevron. Added: a huge centered logo and a 'Sign In now.' link under the form. The reference has neither."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "Both are dark, cinematic marketing pages with a darkened artwork backdrop. The reference collage is dense, angled, and gives depth. The implementation is a flat, coarse grid. The reference adds decoration the implementation lacks: a gradient arc and a rounded, purple-gradient promo card (~16px radius). The buttons in both are slightly rounded.",
+      "fix": "Make the poster mosaic dense and angled, add the glowing arc divider, and add the rounded gradient promo card with its grey 'Learn More' button."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Both use a dark base, white text, and a Netflix-red CTA. The reference Sign In is red filled; the implementation's is an outline. The reference also has a navy/purple gradient under the arc and a purple promo card. The implementation has no secondary hue and its backdrop is uneven: some posters are much brighter, e.g. the light right column.",
+      "fix": "Fill Sign In with red (#E50914). Darken the backdrop evenly with an overlay plus a radial vignette. Add the dark-navy-to-purple gradient band and the purple promo card."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a bold sans for the centered headline. The reference headline is heavier and larger (~64px, black weight). It is followed by a bold ~22px price line and a regular ~18px helper line above the input. The implementation has a ~52px headline, then the form, then a small grey helper line below it. The Get Started label is bold ~26px in the reference and regular ~18px in the implementation.",
+      "fix": "Make the headline ~64px weight 800–900. Add a bold ~22px subhead and a regular ~18px helper line above the form. Make the Get Started label bold ~24px."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "The chevron in Get Started matches. The reference has a translate icon and caret in the language select, plus a 3D popcorn illustration in the promo. Neither is in the implementation. The logo is rendered big and centered instead of as a small top-left wordmark. The reference poster tiles are small with rounded corners and tilted; the implementation's are large, square-cornered and upright.",
+      "fix": "Add the translate glyph and caret to the language select and the popcorn illustration to the promo card. Use small rounded-corner tiles in the tilted mosaic."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "Matches: 'Sign In', 'Email address', 'Get Started'. The implementation's headline is 'Watch anywhere. Cancel anytime.' where the reference reads 'Unlimited movies, TV shows, and more'. The reference price line and the 'Ready to watch? Enter your email to create or restart your membership.' line are both missing. The implementation instead has 'Ready to watch? Sign In now.' The reference promo copy and 'Learn More' are also missing.",
+      "fix": "Set the headline to 'Unlimited movies, TV shows, and more', then add 'Starts at $8.99. Cancel anytime.' and 'Ready to watch? Enter your email to create or restart your membership.' above the input. Remove 'Sign In now.' Add the promo text: 'The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.' / 'Learn More'."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "header top-left: the reference shows the red NETFLIX wordmark; the implementation has no header logo and puts a giant logo in the hero center instead",
+    "bottom of page: the reference has a curved red/purple arc divider and a purple promo banner (popcorn icon, two-line copy, 'Learn More' button); both are absent in the implementation",
+    "header top-right: the reference has an 'English' language dropdown next to a red filled Sign In; the implementation has only an outlined white Sign In",
+    "hero backdrop: the reference is a tilted, dense mosaic of small rounded tiles; the implementation is a flat 4×2 grid of large upright posters with uneven brightness",
+    "hero text stack: the reference shows headline → bold price subhead → helper line → form; the implementation shows logo → headline → form → small 'Ready to watch? Sign In now.' link",
+    "headline copy and weight: 'Unlimited movies, TV shows, and more' in heavier type in the reference vs 'Watch anywhere. Cancel anytime.' in the implementation",
+    "Get Started button: the reference label is bold and larger in a taller button; the implementation's is regular weight and smaller"
+  ],
+  "fixes": [
+    "Move the NETFLIX wordmark to the header top-left (~45px tall) and remove the giant centered logo",
+    "Add a language select ('English', translate icon, caret, outlined) to the left of a red filled Sign In button, top-right",
+    "Rebuild the hero text: 'Unlimited movies, TV shows, and more' (~64px, extra-bold, centered), 'Starts at $8.99. Cancel anytime.' (bold ~22px), 'Ready to watch? Enter your email to create or restart your membership.' (~18px) above the email input + bold 'Get Started >' button; remove the 'Sign In now.' link",
+    "Swap the 4×2 poster grid for a rotated, perspective mosaic of many small rounded tiles with an even dark overlay and vignette",
+    "End the hero at ~82% of the viewport with a curved arc divider (red-to-purple gradient stroke) over a navy-to-black gradient",
+    "Add a promo banner below: popcorn illustration on the left, then a rounded purple-gradient card with a bold title, a subtitle line and a grey 'Learn More' button on the right"
+  ],
+  "summary": "The implementation is recognisably a Netflix-style dark landing hero with an email CTA. It is missing the header logo and language selector, the price/helper copy, the tilted mosaic, the arc divider and the promo banner, and it puts a giant centered logo in the hero instead."
+}

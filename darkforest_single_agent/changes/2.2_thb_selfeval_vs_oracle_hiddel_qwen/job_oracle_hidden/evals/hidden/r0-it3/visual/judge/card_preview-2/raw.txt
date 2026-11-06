@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.3,
+      "notes": "Both use a top nav bar with the logo on the left and icons on the right. The reference page has a 'Browse by Languages' heading with preference dropdowns above a 6-column grid of 16:9 landscape tiles. The hover card is scaled up (~1.5x), centered over the source tile and extends above it. The implementation is the home layout instead: a full-bleed hero with synopsis and Play/More Info, then horizontal rails of portrait 2:3 posters. Its hover card sits below and to the left of the tile (x≈8–348, y≈635–930), covers the next rail, and leaves the original tile's mini controls showing through. Stray '✓' and '⌄' glyphs appear at the rail edges, and a clipped 'ck a title to start.' empty-state line shows between rails.",
+      "fix": "Anchor the preview card to the hovered tile: scale ~1.5x from the tile's center, keep it vertically centered on or slightly above the tile, and clamp it inside the viewport gutters. Hide the underlying tile's own controls. Remove the stray edge glyphs and the empty-state line. For this screen, render the grid/landscape-tile context (heading + preference dropdowns + 6-column 16:9 grid) instead of hero + portrait rails."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The card has the expected inventory: artwork on top, a circular play button, a secondary circle button, a thumbs-up, a chevron/more-info, a maturity badge and a genre tag row with bullet separators. Differences: the reference uses a check (in-list) button, while the implementation uses '+'. The reference has a mute button over the artwork and an N badge top-left; the implementation has neither. The reference places the chevron at the far right and has a 'TV-PG | 2 Seasons | HD' row; the implementation moves the rating to the right of the buttons and adds a '92% Match 2026' line the reference doesn't show. Page level: no 'Browse by Languages' title and no 'Select Your Preferences' with two dropdowns. Extra hero block and invented edge glyphs.",
+      "missing": [
+        "mute/volume toggle over preview artwork",
+        "N brand badge on preview artwork",
+        "seasons count + HD badge metadata row",
+        "right-aligned chevron (more info) button",
+        "Browse by Languages page heading",
+        "Select Your Preferences label with Original Language / English dropdowns",
+        "status ribbons on tiles (Recently Added / Live Now / TOP 10 badge)"
+      ]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Same dark, flat, minimal Netflix language. The reference card has a slightly rounded, elevated surface with large ~52px outlined circle buttons and generous padding. The implementation's card is compact, with ~28px buttons and tight spacing. The hero gradient adds decoration the reference lacks.",
+      "fix": "Grow the card's action buttons to ~52px circles with a 2px grey outline (play filled white). Use ~20px card padding, a 4px radius and a soft drop shadow."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Dark #141414 base, white text, a grey card surface and red brand in both. The implementation adds a green 'Match' accent that the reference card doesn't show. The card surface is close (#181818-ish).",
+      "fix": "Drop the green match line from the card. Keep the metadata in white/light grey with an outlined grey rating badge."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Sans-serif in both. In the reference the card metadata and tags are large (~18px) and white. In the implementation they are ~13px and small. The reference nav uses larger ~17px labels with a pill-highlighted active item. The implementation uses smaller ~14px labels with a bold active item.",
+      "fix": "Set the card tags and metadata to ~18px regular white with grey bullet separators. Enlarge the nav labels to ~17px and mark the active item with a rounded grey pill."
+    },
+    "iconography": {
+      "score": 0.45,
+      "notes": "Outline circle icons appear in both. The implementation uses '+' instead of a check, and its icons are tiny. The mute icon and N badge are missing. Card artwork is roughly 16:9 in both. Grid tiles are 16:9 landscape in the reference and 2:3 portrait in the implementation. The tiles have no ribbon/badge overlays.",
+      "fix": "Use landscape 16:9 tiles with ribbon overlays ('Recently Added', a TOP 10 corner badge). In the card, add the N logo top-left and a circular mute button bottom-right of the artwork, and use a check icon for the in-list state."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "Nav labels match (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages). The reference shows 'Kids' next to the profile; the implementation doesn't. The page heading and 'Select Your Preferences' are missing. The '92% Match' copy is extra, and the stray 'ck a title to start.' text leaks through.",
+      "fix": "Add the 'Kids' profile link, the 'Browse by Languages' heading and the 'Select Your Preferences' label. In the card, show '<rating> N Seasons HD' instead of 'Match'. Remove the leaked empty-state text."
+    }
+  },
+  "similarity": 0.42,
+  "empty_state": false,
+  "deviations": [
+    "Preview card position: in the reference it is enlarged and centered over the hovered tile, rising above it. In the implementation it falls below and to the left of the tile, overlapping the next rail, and the tile's own mini controls stay visible.",
+    "Page context: the reference is a 'Browse by Languages' grid of 16:9 landscape tiles with preference dropdowns. The implementation shows a home hero with synopsis and Play/More Info buttons, plus rails of 2:3 portrait posters.",
+    "Card actions: the reference has large ~52px circles (play, check, thumbs) with the chevron right-aligned. The implementation has small ~28px circles, uses '+' instead of a check, and places the chevron next to the thumbs.",
+    "Card metadata: the reference shows a 'TV-PG | 2 Seasons | HD' row. The implementation shows a green '92% Match 2026' line, with the rating badge moved beside the buttons.",
+    "Card artwork: the reference has an N badge top-left and a mute toggle bottom-right. The implementation has neither.",
+    "Grid tiles: the reference has 'Recently Added' / 'Live Now' ribbons and TOP 10 corner badges. The implementation tiles have none.",
+    "Rail edges: the implementation shows stray '✓' and '⌄' glyphs at the left and right of the rail, and a clipped 'ck a title to start.' text between rails. None of these appear in the reference.",
+    "Nav: the reference has a rounded pill behind the active 'Browse by Languages' item and a 'Kids' link. The implementation has smaller labels with bold Home and no Kids link."
+  ],
+  "fixes": [
+    "Position the hover card centered on the source tile, scaled ~1.5x, clamped within the page gutters, and hide the underlying tile's controls while it is open.",
+    "Rebuild the card body: three ~52px outline circle buttons (filled white play, check, thumbs) on the left and a chevron circle on the right; below them a '[rating box] N Seasons [HD box]' row, then ~18px tags with bullets. Remove the Match line.",
+    "Add the N logo top-left and a circular mute button bottom-right over the card artwork.",
+    "Remove the stray rail-edge ✓/⌄ glyphs and the leaked 'pick a title to start' text.",
+    "For this screen, render a 6-column grid of 16:9 landscape tiles with Recently Added / TOP 10 overlays, under a 'Browse by Languages' heading with 'Select Your Preferences' and two outlined dropdowns.",
+    "Nav: enlarge the labels, add a pill highlight for the active item and add the Kids link beside the profile avatar."
+  ],
+  "summary": "The hover card has the right basic parts but is undersized, misplaced and missing the mute button, N badge and seasons/HD row. The page underneath is the home hero with portrait rails rather than the reference's landscape language grid."
+}
+```

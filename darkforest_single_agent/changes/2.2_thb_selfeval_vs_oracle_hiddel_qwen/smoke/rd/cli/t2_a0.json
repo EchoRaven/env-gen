@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1aa5b-60f1-7f13-ab40-640eceb3c8a8",
+ "num_turns": 3,
+ "commands": 0,
+ "usage": {
+  "input_tokens": 38526,
+  "cached_input_tokens": 25088,
+  "cache_write_input_tokens": 10976,
+  "output_tokens": 2804,
+  "reasoning_output_tokens": 362
+ },
+ "is_error": false,
+ "result": "\n\n1 through 30 (seeds 1\u201330).",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 1.3,
+ "_stderr": ""
+}

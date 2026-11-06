@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The overall structure matches. Both show a centered dark modal over a dimmed Netflix home page, a synopsis block at the top, an 'Episodes' heading with a season control on the right, and a vertical list of episode rows separated by hairline dividers. The row layout differs. The reference runs number, then thumbnail, then a text block with the duration at the right end of the title line. The implementation runs thumbnail, then number, then text, with the duration vertically centered at the far right edge. In the reference, the 'This show is:' metadata sits in a right column beside the synopsis. The implementation puts a genres row below the synopsis instead.",
+      "fix": "Reorder each episode row to [episode number ~48px column, centered] → [16:9 thumbnail ~170px] → [text block]. Put the duration on the same baseline as the title at the right edge of the text block, not centered in the row. Move the tag/genre metadata into a right-hand column beside the synopsis."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "The modal, synopsis, Episodes heading, season selector area, numbered episode rows with thumbnail, title, description and duration, and the highlighted row state are all present. Differences: the implementation puts a permanent play-button overlay on every thumbnail, but the reference shows one only on the hovered row (ep 2). The reference shows the season label as plain text on the right. The implementation uses a boxed native <select> plus a '4 Seasons' label, which may be justified by the data, but the control is styled differently. The highlighted current-episode row is ep 1 in the reference (lighter rounded panel), while the implementation highlights a hovered row 3.",
+      "missing": [
+        "right-column 'This show is:' tag metadata beside the synopsis",
+        "current-episode highlight on episode 1"
+      ],
+      "fix": "Show the circular play overlay only on hover, centered on the thumbnail. Always highlight the current or first episode row with a lighter (#333) rounded panel. Style the season selector as a dark bordered dropdown with a Netflix caret, not a native select."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both are flat and dark with hairline dividers and similar density. In the reference, the highlighted row has a lighter, slightly rounded panel spanning the full list width. The thumbnails in the reference have slightly rounded corners. The implementation's thumbnails have square corners. The implementation's description text is denser and smaller, so it reads more cramped.",
+      "fix": "Add a ~4px radius to thumbnails and the highlight panel. Increase row vertical padding slightly and enlarge the description text so rows feel airier."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use the same dark #181818 modal over a dimmed backdrop with a lighter highlight row and gray dividers. The reference's descriptions are near-white (light gray, high contrast). The implementation's descriptions are a muted mid-gray. The implementation's episode numbers are dimmer than the reference's light-gray numbers.",
+      "fix": "Make episode descriptions #d2d2d2 and episode numbers ~#d2d2d2 at full opacity. Keep titles pure white."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use sans-serif type with a bold 'Episodes' heading. In the reference, episode titles are bold (~17px), descriptions are ~15px regular in light gray with comfortable line height, episode numbers are large (~24px), and the duration is ~17px white. In the implementation, titles are regular weight, descriptions are ~13px with tight leading, numbers are lighter, and the duration is small gray.",
+      "fix": "Set episode titles to font-weight 700 at ~16–17px. Set descriptions to ~14–15px with line-height ~1.5. Set episode numbers to ~24px. Set the duration to ~16px white."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Thumbnails use the same 16:9 cover crop at a similar size. The implementation has a small filled play circle in the bottom-right of every thumbnail. The reference has a single large outlined play circle centered on the hovered thumbnail only.",
+      "fix": "Replace the per-thumbnail corner play badges with one large (~52px) translucent outlined play circle centered on the thumbnail, shown only on row hover."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading and the duration format ('34m') match. The implementation adds a 'Genres:' label and a '4 Seasons' label. The reference's synopsis-side metadata uses a 'This show is:' label.",
+      "fix": "Use 'This show is:' tag labeling in the right metadata column. Show only the season name in the selector."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "episode rows: the implementation places the thumbnail before the episode number; the reference puts the large number on the left, then the thumbnail",
+    "episode rows: the implementation centers the duration vertically at the far-right edge; the reference aligns it on the title line at the end of the text block",
+    "thumbnails: the implementation shows a small play badge on every thumbnail; the reference shows a single large centered play circle only on the hovered row",
+    "episode titles: regular weight in the implementation versus bold in the reference; descriptions are smaller and grayer in the implementation",
+    "highlight row: the reference highlights episode 1 with a lighter rounded panel; the implementation highlights row 3 with square corners",
+    "header area: the implementation uses a native boxed <select> plus a '4 Seasons' label; the reference shows plain season text on the right",
+    "synopsis metadata: the reference has a right-column 'This show is:' tag line; the implementation puts a genres row beneath the synopsis"
+  ],
+  "fixes": [
+    "Reorder episode row columns to number → thumbnail → text, with the number ~24px light gray and centered in a ~48px column",
+    "Put the duration on the title's line, right-aligned within the text block, ~16px white",
+    "Make episode titles bold, ~17px. Make descriptions ~15px #d2d2d2 with line-height 1.5",
+    "Remove the per-thumbnail play badges and show a large centered outlined play circle on hover only. Round thumbnail corners ~4px",
+    "Highlight the current/first episode row with a #333 rounded panel spanning the list width",
+    "Style the season control as a dark Netflix dropdown and move the tag metadata to a right column with the 'This show is:' label"
+  ],
+  "summary": "The modal and episode-list structure match the reference. The main gaps are the column order within each row, where the duration sits, the always-on play badges, and lighter-weight, smaller text."
+}
+```

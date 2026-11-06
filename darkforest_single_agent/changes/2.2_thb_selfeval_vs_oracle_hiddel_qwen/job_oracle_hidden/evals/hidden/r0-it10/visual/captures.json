@@ -1,0 +1,82 @@
+{
+ "landing": {
+  "route": "/",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/landing.png"
+ },
+ "login": {
+  "route": "/login",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/login.png"
+ },
+ "browse_home": {
+  "route": "/browse",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/browse_home.png"
+ },
+ "browse_home_rows": {
+  "route": "/browse",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/browse_home_rows.png"
+ },
+ "shows": {
+  "route": "/shows",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/shows.png"
+ },
+ "movies": {
+  "route": "/movies",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/movies.png"
+ },
+ "games": {
+  "route": "/games",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/games.png"
+ },
+ "new_and_popular": {
+  "route": "/new",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/new_and_popular.png"
+ },
+ "genre_category": {
+  "route": "/browse/genre/4",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/genre_category.png"
+ },
+ "browse_by_languages": {
+  "route": "/browse/languages",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/browse_by_languages.png"
+ },
+ "my_list": {
+  "route": "/mylist",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/my_list.png"
+ },
+ "title_detail": {
+  "route": "modal: More Info",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/title_detail.png"
+ },
+ "title_episodes": {
+  "route": "modal: More Info, scrolled",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/title_episodes.png"
+ },
+ "rate_dialog": {
+  "capture_missing": true,
+  "why": "Locator.hover: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=re.compile(r\"rate|thumb|like\", re.IGNORECASE)).first\n  -     - locator resolved to <button class=\"mini-btn"
+ },
+ "player": {
+  "route": "/watch/29",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/player.png"
+ },
+ "player_controls": {
+  "route": "/watch/29 (controls)",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/player_controls.png"
+ },
+ "account_menu": {
+  "route": "header account menu",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/account_menu.png"
+ },
+ "card_hover_preview": {
+  "route": "hover a rail poster",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/card_hover_preview.png"
+ },
+ "card_preview": {
+  "route": "hover a rail poster (held)",
+  "shot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/evals/hidden/r0-it10/visual/shots/card_preview.png"
+ },
+ "shows_genres_menu": {
+  "capture_missing": true,
+  "why": "Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_text(re.compile(r\"^\\s*genres\", re.IGNORECASE)).first\n  -     - locator resolved to <option value=\"\">Genres</option>\n  -   - at"
+ }
+}

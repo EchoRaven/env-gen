@@ -1,0 +1,18 @@
+env-gen api_smoke: FAILED - 2/3 checks passed. Business-chain steps ok: 0/0.
+Summary: FAILED: docker_up
+
+Checks:
+- [pass] frontend_navigable: 26 page component(s), 15 route(s)
+- [pass] frontend_fallback_pages: 0/15 pages are framework fallback ()
+- [fail] docker_up: Network thbval21_default Creating 
+ Network thbval21_default Creating 
+ Volume thbval21_pgdata Creating 
+ Volume thbval21_pgdata Creating 
+ Volume thbval21_pgdata Created 
+ Volume thbval21_pgdata Created 
+ Network thbval21_default Created 
+ Network thbval21_default Created 
+ Container netflix_database Creating 
+ service:database:1 Error response from daemon: Conflict. The container name "/netflix_database" is already in use by container "b5506bdff9302ff933f85c0ecf6735f2b4e7eb81dedeaf32462a0d19a38759d4". You have to remove (or rename) that container to be able to reuse that name. 
+ Container netflix_backend Creating 
+Error response from daemon: Conflict. The container name "/netflix_database" is already in use by container "b5506bdff9302ff933f85c0ecf6735f2b4e7eb81dedeaf32462a0d19a38759d4". You have to remove (or rename) that container to be able to reuse that name.

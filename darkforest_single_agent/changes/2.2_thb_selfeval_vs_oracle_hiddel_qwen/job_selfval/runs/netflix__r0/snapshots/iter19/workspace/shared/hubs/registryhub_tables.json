@@ -1,0 +1,93 @@
+{
+ "users": {
+  "name": "users",
+  "columns": [
+   "id",
+   "email",
+   "password_hash",
+   "name"
+  ]
+ },
+ "profiles": {
+  "name": "profiles",
+  "columns": [
+   "id",
+   "user_id",
+   "name",
+   "avatar",
+   "is_kids"
+  ]
+ },
+ "titles": {
+  "name": "titles",
+  "columns": [
+   "id",
+   "name",
+   "kind",
+   "year",
+   "genre",
+   "maturity_rating",
+   "rating",
+   "synopsis",
+   "poster",
+   "backdrop",
+   "video_url",
+   "duration",
+   "top10_rank"
+  ]
+ },
+ "episodes": {
+  "name": "episodes",
+  "columns": [
+   "id",
+   "title_id",
+   "season",
+   "number",
+   "name",
+   "synopsis",
+   "duration",
+   "thumbnail"
+  ]
+ },
+ "genres": {
+  "name": "genres",
+  "columns": [
+   "id",
+   "name"
+  ]
+ },
+ "title_genres": {
+  "name": "title_genres",
+  "columns": [
+   "id",
+   "title_id",
+   "genre_id"
+  ]
+ },
+ "my_list": {
+  "name": "my_list",
+  "columns": [
+   "id",
+   "profile_id",
+   "title_id"
+  ]
+ },
+ "ratings": {
+  "name": "ratings",
+  "columns": [
+   "id",
+   "profile_id",
+   "title_id",
+   "value"
+  ]
+ },
+ "continue_watching": {
+  "name": "continue_watching",
+  "columns": [
+   "id",
+   "profile_id",
+   "title_id",
+   "progress_seconds"
+  ]
+ }
+}

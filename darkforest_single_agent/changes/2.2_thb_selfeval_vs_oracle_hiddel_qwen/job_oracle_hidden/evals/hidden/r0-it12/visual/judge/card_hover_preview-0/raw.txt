@@ -1,0 +1,74 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Both have the same top nav and stacked horizontal rails on a dark page. The reference is a genre sub-page: a 'TV Shows > Sports TV Shows' breadcrumb header sits over a dimmed backdrop, followed by rails of 16:9 landscape tiles at a 67px gutter. The implementation shows a full hero billboard (title, synopsis, Play/More Info) that the reference does not have. Its rails use tall 2:3 portrait posters. The hover card is clamped to the left edge of the viewport (x≈8) and covers the 'Trending Now' heading. In the reference the card is centred on its tile and grows over the next rail. The reference also shows faint page-indicator dashes at the right end of each rail heading; the implementation has none.",
+      "fix": "Replace the billboard with a breadcrumb header ('TV Shows' in grey, '>', then the large white page title). Switch the rail tiles to ~290×165 landscape 16:9 with ~8px gaps. Anchor the hover card to the hovered tile's centre and only shift it to stay inside the 67px page gutter. Add the small dash page indicators at the right of each rail heading."
+    },
+    "components": {
+      "score": 0.5,
+      "missing": [
+        "breadcrumb header (parent > page title)",
+        "title-logo artwork overlaid on the hover-card video/still",
+        "mute/volume toggle on the hover-card media",
+        "seasons count and HD badge in the hover-card metadata row",
+        "pill highlight on the active nav item",
+        "Kids profile link with icon in the nav",
+        "rail page-indicator dashes",
+        "tile badges (TOP 10 corner flag, 'Recently Added' / 'Live Now' red tags)"
+      ],
+      "notes": "The hover card has the right kinds of parts: media on top, play/add/thumb buttons, an expand chevron, a maturity rating and a dot-separated tag row. But the buttons are tiny (~30px against ~50px in the reference). The expand chevron sits next to the other buttons instead of on the far right. The rating sits at the right end of the button row instead of starting the metadata row. The card also adds a '92% Match' line that the reference does not show. Elsewhere the implementation adds a hero billboard and an empty 'Continue Watching' message, neither of which is in the reference.",
+      "fix": "Rebuild the hover card's lower section. Put ~50px circular buttons in a row, starting with a solid white Play followed by outlined Add and Like, with the outlined chevron pushed to the far right. Below that, add a metadata row reading '[TV-14] 3 Seasons [HD]', with TV-14 and HD as outlined boxes. Then add a white tag row ('Charming • Intimate • Sitcom'). Overlay the title logo bottom-left on the media and a round mute button bottom-right. Remove the Match line."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat and dark with slightly rounded corners. The reference hover card is big (~435×430, about 1.5× a tile), with generous padding and a soft shadow, and its media is a full-width 16:9 frame. The implementation's card is cramped: small padding, small controls and compact text, so it reads as dense rather than spacious.",
+      "fix": "Scale the hover card to ~1.5× the tile width, use 20–24px inner padding and ~50px controls, and keep the soft dark shadow and ~4px radius."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a near-black base, a #181818-style card surface, a red wordmark and a white Play button. The implementation adds green '92% Match' text, which the reference does not use. Its tag text is grey, while the reference shows it in white.",
+      "fix": "Drop the green match text, set the hover-card tags to white, and dim the backdrop behind the rails as the reference does."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a Netflix-style sans. The reference has a large ~42px page title, ~26px rail headings, ~18px nav labels and ~17px hover-card metadata. The implementation is smaller throughout: ~14px nav, ~13px hover-card metadata and tags, and ~22px rail headings. The active nav item is shown in bold rather than as a pill.",
+      "fix": "Set the nav labels to ~17px regular, rail headings to ~26px medium and hover-card metadata and tags to ~17px. Add the ~42px breadcrumb title."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "The hover-card icons are the right kind: outline circles with a white-filled play. They are much smaller and thinner than the reference's. Tile artwork is portrait instead of landscape 16:9 with the title logo baked into the image. The avatar is a green letter tile, where the reference shows a blue smiley avatar plus a Kids icon. None of the tile overlay badges appear.",
+      "fix": "Use 16:9 landscape artwork for the rails. Size the hover-card icon circles at ~50px with a 2px outline. Add the TOP 10 and red 'Recently Added' overlay badges."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "The nav labels match apart from 'Kids'. The reference has a breadcrumb reading 'TV Shows > Sports TV Shows'. The implementation instead shows billboard copy ('Play', 'More Info'), a '92% Match' line, and the empty-state message 'You haven't watched anything yet'. The hover card has no 'N Seasons' copy.",
+      "fix": "Add 'Kids' to the nav, add the breadcrumb copy, show 'N Seasons' in the card metadata, and remove the Match line."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "hover card: much smaller (~400px wide) than the reference's ~435×430 card, with tiny ~30px buttons against ~50px",
+    "hover card position: clamped to the left viewport edge and covering the 'Trending Now' heading; the reference centres the card on its tile and lets it overlap the next rail",
+    "hover card media: no title-logo artwork overlay and no mute button, both shown bottom-left and bottom-right in the reference",
+    "hover card metadata: the rating sits in the button row and a green 'Match' line is added; the reference row reads 'TV-14 | 3 Seasons | HD' with outlined boxes",
+    "hover card controls: the expand chevron sits next to the other buttons instead of on the far right",
+    "page header: the implementation shows a hero billboard with synopsis and Play/More Info; the reference shows a 'TV Shows > Sports TV Shows' breadcrumb over a dimmed backdrop",
+    "rails: tall portrait posters instead of 16:9 landscape tiles, and no TOP 10 or 'Recently Added' badges",
+    "nav: the active item is shown in bold with no pill, and the Kids link is missing",
+    "Continue Watching rail shows a text empty state where the reference has a full rail of tiles"
+  ],
+  "fixes": [
+    "Resize the hover card to ~1.5× tile width, centre it on the hovered tile, and keep it inside the 67px page gutter.",
+    "Overlay the title logo bottom-left on the hover-card media and a circular mute button bottom-right.",
+    "Rebuild the hover-card controls as ~50px circles: white filled Play, outlined Add and Like, and an outlined chevron pushed to the right.",
+    "Replace the Match line with a metadata row of a boxed TV-14, 'N Seasons' and a boxed HD, followed by a white dot-separated tag row.",
+    "Switch the rail tiles to 16:9 landscape artwork with TOP 10 and red 'Recently Added' badges.",
+    "On this route, replace the billboard with the breadcrumb header and dimmed backdrop.",
+    "Add a pill highlight on the active nav item and a Kids link with its icon in the nav, and enlarge the nav text."
+  ],
+  "summary": "The implementation has the same Netflix dark-rail structure and a hover card with the right parts, but the card is undersized and badly placed, its metadata is arranged differently, the rails use portrait posters instead of landscape tiles, and a hero billboard replaces the reference's breadcrumb header."
+}
+```

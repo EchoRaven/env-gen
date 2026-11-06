@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The overall structure matches: a centred dark modal (~1080px) sits over a dimmed home page, with the synopsis at the top, an 'Episodes' header row, and a vertical list of episode rows divided by hairlines. Inside each row the order is different. The reference goes [large number] → [thumbnail] → [title + duration on one line, description below]. The implementation goes [thumbnail] → [number] → [title/description], and puts the duration in its own column at the far right, vertically centred. In the reference the duration sits on the title baseline, just right of the text block.",
+      "fix": "Reorder each episode row to: number column (~60px, centred) → 170x96 thumbnail → text block. Put the title and the duration on one flex row (title left, duration right-aligned at the text block's right edge), with the description below. Remove the separate far-right duration column."
+    },
+    "components": {
+      "score": 0.7,
+      "missing": [
+        "plain series-title label on the right of the Episodes header (in its place the implementation shows a season dropdown and a season count)",
+        "rounded, lighter selected/current-episode card on the first row"
+      ],
+      "notes": "The episode list, thumbnails, numbers, titles, descriptions, durations and synopsis are all there. The implementation adds things the reference does not show: a '4 Seasons' count with a 'Season 1' native select box, and a small play button in the bottom-right of every thumbnail. In the reference, the only play icon is one large centred one on the hovered thumbnail. The reference highlights row 1 as the current episode with a lighter rounded card. The implementation highlights row 3, which looks like a hover state.",
+      "fix": "Replace the season count and select with a plain right-aligned title label for the selected season or series. Show the play overlay only on hover, as a large (~56px) centred circle with a white outline. Give the first or current episode a #333 background with ~6px rounded corners."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both are flat and dark, with hairline row dividers and similar density. The reference's selected row is a rounded, elevated card. The implementation's highlight is a square, full-width band. The native select box adds a styling element that does not belong to the reference.",
+      "fix": "Round the highlighted row's corners (~4–6px) and inset it to the list width. Drop the native select styling."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The modal surface (#181818) and the dimmed backdrop match. In the reference, the title, duration and description text are bright white or light grey (#d2d2d2). In the implementation the description and duration are a dimmer grey, and the episode numbers are mid-grey where the reference uses bright white.",
+      "fix": "Episode numbers and titles: #fff. Description: #d2d2d2. Duration: #fff."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. The reference sets episode titles semibold or bold (~17px), descriptions at ~15px with comfortable line height, and episode numbers large (~24px) in white. The implementation sets titles in regular weight, descriptions small (~13px, tight), numbers ~20px in grey, and durations small.",
+      "fix": "Episode title: 17px, weight 600–700. Description: 15px, line-height 1.5. Episode number: 24–26px, white. Duration: 16px, white."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The thumbnail aspect ratio (~16:9, slightly rounded corners) matches. In the reference, the play glyph is one large outlined circle, centred on the hovered thumbnail only. The implementation puts a small filled play badge in the bottom-right corner of every thumbnail.",
+      "fix": "Remove the per-thumbnail corner badges. On hover, show one centred, ~56px, white-outlined play circle on a translucent dark fill."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The 'Episodes' heading matches, and so does the duration format ('34m'). The implementation adds '4 Seasons' and 'Season 1' copy that the reference does not show. On the right of its header, the reference shows only the series title.",
+      "fix": "Remove the '4 Seasons' label. On the right of the header, show only the title text, at ~20px, in regular weight."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "Episode rows: the implementation puts the thumbnail before the episode number; the reference puts the number first, in its own left column.",
+    "Episode rows: the implementation puts the duration in a separate far-right, vertically centred column; in the reference it sits on the title line, at the right of the text block.",
+    "Episodes header, right side: the implementation shows a '4 Seasons' count and a native 'Season 1' select box; the reference shows a plain title label.",
+    "Thumbnails: the implementation puts a small play badge in the bottom-right of every thumbnail; the reference shows one large centred play circle on the hovered thumbnail only.",
+    "Typography: the implementation's episode titles are regular weight and its descriptions are small and dim grey; the reference uses semibold titles and larger, brighter descriptions.",
+    "Selected row: the reference highlights the first row with a lighter rounded card; the implementation highlights row 3 with a square full-width band.",
+    "Episode numbers: grey and smaller in the implementation; large and white in the reference."
+  ],
+  "fixes": [
+    "Reorder each row's columns to number → thumbnail → text block, and move the duration onto the title line, right-aligned within the text block.",
+    "Replace the season count and select box in the Episodes header with a right-aligned plain title label.",
+    "Remove the per-thumbnail corner play badges and show a large centred, outlined play circle on hover only.",
+    "Episode titles: 17px, weight 600, white. Descriptions: 15px, #d2d2d2, line-height 1.5. Numbers: 24px, white.",
+    "Give the current episode row a #333 background with rounded corners, inset to the list width."
+  ],
+  "summary": "The modal shell and episode list match the reference, but the row column order, duration placement, header control (a dropdown instead of a title label), play overlay and text weights all differ."
+}
+```

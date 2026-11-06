@@ -1,0 +1,69 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.68,
+      "notes": "The structure matches: a centred modal over the dimmed browse page, a hero image with the title lockup at its bottom-left, then a two-column info block (metadata and synopsis on the left, credits on the right), then an Episodes header with a season selector and episode rows. The proportions are off. The reference modal is about 1085px wide (about 56% of the viewport); the implementation's is about 780px (about 41%). The reference hero is about 600px tall, with the Play, add and like buttons overlaid on the bottom of the image. In the implementation the hero is about 430px and the buttons sit below the image on the dark surface. The reference has a 'Season 1:' rating line between the Episodes header and the rows; the implementation does not.",
+      "fix": "Widen the modal to about 1085px (max-width ~56vw) and make the hero about 16:9 at full modal width (~600px tall). Overlay the title lockup and button row on the lower part of the hero inside the bottom gradient. Add the season rating line between the Episodes header and the first row."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "Present: close button, hero, title lockup, Play button, add (+) and like circle buttons, year / seasons / HD metadata, TV-14 box, synopsis, Genres line, Episodes heading, season dropdown, and episode rows with number, thumbnail, title, duration and description. Missing: the mute/volume circle button at the right of the hero, the subtitles icon after HD, the content-advisory text after the TV-14 box, the Cast line with 'more', the 'This Show Is:' line, and the 'Season 1: [TV-14] advisories' line. Invented: a green '% Match' and an 'Original Language' line. The season selector is a small native select, not the large bordered dropdown.",
+      "missing": [
+        "hero mute/volume circle button (bottom-right of hero)",
+        "subtitles/CC icon in metadata row",
+        "content advisory text next to rating box",
+        "Cast: line with 'more' link",
+        "'This Show Is:' tags line",
+        "'Season 1: [TV-14] advisories' line under Episodes header",
+        "large bordered custom season dropdown"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat dark Netflix language: a slightly rounded modal, a white Play button, outlined circle icon buttons and a dimmed backdrop. Differences: the reference is airier, with larger padding, bigger buttons and more space between the metadata, synopsis and Episodes blocks; the implementation is compact. In the reference only the active episode row has a raised grey card and the rows are separated by dividers; in the implementation every row has its own card background. The reference dropdown has a 1px light border and is roughly 180×46px; the implementation's is a small native control.",
+      "fix": "Scale up the padding (~48px side gutters) and the vertical gaps. Give only the selected or first episode row the lighter grey rounded background and separate the other rows with hairline dividers. Restyle the season dropdown as a ~180×46px dark box with a 1px grey border and a caret."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "Dark #181818-style modal over a darkened page, white primary button, grey secondary labels and white values: all match. The implementation adds a green 'Match' accent that the reference does not have.",
+      "fix": "Remove the green '% Match' text; keep the metadata in light grey/white only."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Same sans family. The display-style title lockup matches in treatment, and the 'Label:' pattern (grey label, white value) is correct. The implementation's sizes run smaller: synopsis about 14px vs about 18px, metadata about 13px vs about 17px, Episodes heading about 20px vs about 28px, Play label smaller. Overall the hierarchy is less pronounced.",
+      "fix": "Raise the synopsis to ~18px with ~1.6 line-height, the metadata row to ~17px, the right-column credits to ~15px, the Episodes heading to ~28px, the Play label to ~22px, and the episode titles to ~18px."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The add and like icons are outlined in circular outlined buttons, and the close button is an X in a dark circle; both match. In the reference the Play icon is a solid filled triangle; in the implementation it is an outline. The reference buttons are larger (~52px circles). The mute icon and the subtitles icon are missing. Episode thumbnails are 16:9 with slight rounding, which matches.",
+      "fix": "Use a filled play triangle, enlarge the circle buttons to ~52px, add the speaker-muted circle button at the hero's bottom-right, and add the subtitles glyph after the HD badge."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "'Play', 'Episodes', 'Season 1' and 'Genres:' match. The labels 'Cast:' and 'This Show Is:' are missing. 'Match' and 'Original Language:' are invented labels that the reference does not show.",
+      "fix": "Replace 'Original Language:' with 'Cast:' (names plus italic 'more') and add 'This Show Is:'; drop the 'Match' label."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "Modal width: the implementation is about 780px, much narrower than the reference's ~1085px, so the whole modal looks cramped.",
+    "Hero: the reference overlays the Play/+/like row on the image inside the bottom gradient; the implementation puts the row below the image, and the hero is shorter.",
+    "Hero bottom-right: the reference's mute/volume circle button is absent.",
+    "Right info column: the reference shows Cast (with 'more'), Genres and This Show Is; the implementation shows only Genres plus an invented 'Original Language'.",
+    "Metadata row: the implementation adds a green '% Match', drops the subtitles icon, and lacks the second line with the content advisories next to the TV-14 box.",
+    "Episodes section: the 'Season 1: [TV-14] advisories' sub-line is missing, and the season selector is a small native select instead of the large bordered dropdown.",
+    "Episode rows: every row is a filled card, whereas the reference highlights only the active row on a lighter grey surface.",
+    "Typography: the synopsis, metadata, heading and button text are all noticeably smaller than in the reference."
+  ],
+  "fixes": [
+    "Widen the modal to ~1085px and make the hero ~600px tall (16:9).",
+    "Move the title lockup and the Play/+/like buttons onto the lower hero over the gradient, and add the mute circle button at the bottom-right.",
+    "Remove the '% Match'; add the subtitles icon after HD and a second line: [TV-14] box plus advisory text.",
+    "Right column: add 'Cast: … more' and 'This Show Is: …', and remove 'Original Language'.",
+    "Under Episodes, add 'Season 1: [TV-14] advisories', and replace the native select with a ~180×46px bordered dark dropdown with a caret.",
+    "Give only the active episode row the lighter grey rounded background; separate the other rows with dividers.",
+    "Scale up the type (synopsis ~18px, metadata ~17px, Episodes ~28px) and the padding, and use a filled play icon with larger ~52px circle buttons."
+  ],
+  "summary": "The modal skeleton and dark Netflix treatment match, but the implementation is too narrow and compact, its buttons sit below the hero instead of on it, and it lacks the mute button, Cast and 'This Show Is' lines, advisory lines and the styled season dropdown, while adding a '% Match' and an Original Language line the reference doesn't have."
+}

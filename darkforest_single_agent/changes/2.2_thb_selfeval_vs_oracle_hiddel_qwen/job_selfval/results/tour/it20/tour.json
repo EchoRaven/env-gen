@@ -1,0 +1,142 @@
+{
+ "frontend": "http://127.0.0.1:60080",
+ "account": "tour508306@example.com",
+ "log": [
+  {
+   "step": 1,
+   "name": "landing",
+   "url": "http://127.0.0.1:60080/"
+  },
+  {
+   "register": 201
+  },
+  {
+   "step": 2,
+   "name": "login",
+   "url": "http://127.0.0.1:60080/login"
+  },
+  {
+   "step": 3,
+   "name": "after_sign_in",
+   "url": "http://127.0.0.1:60080/profiles"
+  },
+  {
+   "profile_clicked": "P\nProfile"
+  },
+  {
+   "step": 4,
+   "name": "home",
+   "url": "http://127.0.0.1:60080/browse"
+  },
+  {
+   "step": 5,
+   "name": "home_rows",
+   "url": "http://127.0.0.1:60080/browse"
+  },
+  {
+   "nav_links": [
+    [
+     "Home",
+     "/browse"
+    ],
+    [
+     "Shows",
+     "/shows"
+    ],
+    [
+     "Movies",
+     "/movies"
+    ],
+    [
+     "Games",
+     "/games"
+    ],
+    [
+     "New & Popular",
+     "/new"
+    ],
+    [
+     "My List",
+     "/my-list"
+    ],
+    [
+     "Browse by Languages",
+     "/browse/languages"
+    ]
+   ]
+  },
+  {
+   "step": 6,
+   "name": "nav_home",
+   "url": "http://127.0.0.1:60080/browse"
+  },
+  {
+   "step": 7,
+   "name": "nav_shows",
+   "url": "http://127.0.0.1:60080/shows"
+  },
+  {
+   "step": 8,
+   "name": "nav_movies",
+   "url": "http://127.0.0.1:60080/movies"
+  },
+  {
+   "step": 9,
+   "name": "nav_games",
+   "url": "http://127.0.0.1:60080/games"
+  },
+  {
+   "step": 10,
+   "name": "nav_new_popular",
+   "url": "http://127.0.0.1:60080/new"
+  },
+  {
+   "step": 11,
+   "name": "nav_my_list",
+   "url": "http://127.0.0.1:60080/my-list"
+  },
+  {
+   "step": 12,
+   "name": "nav_browse_by_languages",
+   "url": "http://127.0.0.1:60080/browse/languages"
+  },
+  {
+   "cards_on_home": 99
+  },
+  {
+   "step": 13,
+   "name": "card_hover",
+   "url": "http://127.0.0.1:60080/browse"
+  },
+  {
+   "step": 14,
+   "name": "title_open",
+   "url": "http://127.0.0.1:60080/title/2"
+  },
+  {
+   "play_button_covered": true,
+   "mouse_click_started_player": false
+  },
+  {
+   "player_opened_by_route": "http://127.0.0.1:60080/watch/2"
+  },
+  {
+   "step": 15,
+   "name": "player",
+   "url": "http://127.0.0.1:60080/watch/2"
+  },
+  {
+   "video": {
+    "src": "http://127.0.0.1:60080/assets/video/clip_27152555.mp4",
+    "t": 0,
+    "paused": true,
+    "err": 4
+   }
+  }
+ ],
+ "console_errors": [],
+ "failed_requests": [
+  "http://127.0.0.1:60080/assets/video/clip_27152555.mp4",
+  "http://127.0.0.1:60080/assets/video/clip_27152555.mp4"
+ ]
+}

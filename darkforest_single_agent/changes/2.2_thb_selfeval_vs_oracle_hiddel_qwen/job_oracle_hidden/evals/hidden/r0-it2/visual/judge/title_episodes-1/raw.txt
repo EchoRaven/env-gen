@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Both show a centred dark modal over a dimmed home page, with the Episodes header, then a vertical list of episode rows split by hairline dividers. Differences: the reference modal is wider (~1085px vs ~940px). In the reference each row reads episode number → thumbnail → text block. The implementation puts the thumbnail first and the number after it. In the reference the duration sits top-right on the title line; in the implementation it is centred vertically at the far right. Reference rows also have more vertical padding.",
+      "fix": "Widen the modal to ~1085px. Reorder each row to [large episode number column ~60px] [thumbnail ~170x96] [text block]. Put the title and duration on one top line with the duration right-aligned, and the description underneath."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "The Episodes heading, episode rows, thumbnails, numbers, titles, descriptions, durations and the highlighted-row state are all present. Differences: the reference header's right side shows a plain season/title label. The implementation shows '4 Seasons' text plus a native <select> dropdown with a white border. The reference shows a play-circle overlay only on the hovered thumbnail. The implementation puts a play button on every thumbnail, at the bottom-right instead of centred. In the reference the highlighted row is the first one, a lighter grey rounded card.",
+      "missing": [],
+      "fix": "Replace the '4 Seasons' + native select with a plain right-aligned label (or a styled dropdown without the native look). Show a large centred translucent play circle only on hover, not on every thumbnail."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat dark design: hairline dividers and a grey highlight on the active row. The reference's active row has slightly rounded corners and a lighter #333-ish fill. Reference spacing is airier, with larger text and padding. The implementation is denser and its text is smaller. The native select breaks the visual language.",
+      "fix": "Make the active row a rounded (~4px) #333 card. Increase row padding to ~24px vertically. Style or remove the native select."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark charcoal modal (#181818) over a dimmed backdrop, with white titles and light-grey descriptions. In the implementation the episode numbers are mid-grey and the descriptions dimmer; in the reference both the numbers and the descriptions are near-white/light grey with high contrast.",
+      "fix": "Make the episode numbers white/#e5e5e5 and the descriptions #d2d2d2."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use sans-serif. The reference uses larger sizes: episode number ~26px regular, title ~17px bold, description ~15px with comfortable line height, duration ~17px. The implementation shrinks these: number ~18px grey, title ~15px medium, description ~13px, duration ~13px. The reference titles are noticeably bolder.",
+      "fix": "Set the episode number to 24–26px white, the title to 16–17px bold, the description to 15px with line-height 1.5, and the duration to 16px."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Thumbnails are a similar 16:9 cover crop with slight rounding. The play overlay differs. The reference uses a large centred translucent circle with a white outline, shown on hover only. The implementation uses a small solid black circle at the bottom-right on every thumbnail. The implementation's thumbnails are larger than the reference's.",
+      "fix": "Use a ~50px translucent-black circle with a white border and white triangle, centred on the thumbnail and shown on hover only. Size thumbnails to ~170x96."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading and the 'NNm' duration format match. The extra '4 Seasons' label and 'Season 1' select are not in the reference, which shows only a title label at the top right.",
+      "fix": "Drop the '4 Seasons' text and show a single right-aligned season/title label."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Episode rows: the implementation puts the episode number to the right of the thumbnail; the reference puts a large number in its own left column before the thumbnail",
+    "Episode rows: a play button overlay appears on every thumbnail in the implementation (small, bottom-right); the reference shows a large centred play circle only on the hovered row",
+    "Episodes header, right side: the implementation shows '4 Seasons' plus a native white-bordered <select>; the reference shows a plain right-aligned label",
+    "Duration: the implementation centres it vertically at the far right; the reference aligns it top-right on the title baseline",
+    "Typography: the implementation's numbers, titles and descriptions are smaller and dimmer than the reference's (title bold ~17px, description ~15px)",
+    "Modal width: the implementation (~940px) is narrower than the reference (~1085px)",
+    "Active row: the reference highlights the row as a lighter rounded card; the implementation's highlight is flatter, with square corners"
+  ],
+  "fixes": [
+    "Reorder each episode row to: number column (24–26px, white, centred) → thumbnail (~170x96) → text block",
+    "Put the title (bold ~17px) and duration (~16px, right-aligned) on one top line, with the description (15px, #d2d2d2) underneath",
+    "Show the play overlay only on hover, as a large centred translucent circle with a white outline",
+    "Replace '4 Seasons' + the native select with a plain right-aligned label in the Episodes header",
+    "Widen the modal to ~1085px and increase row vertical padding to ~24px",
+    "Style the active row as a #333 card with ~4px radius"
+  ],
+  "summary": "The modal is the same dark episode list, but row order (number vs thumbnail), duration placement, play overlays on every thumbnail, the native season select and smaller type separate it from the reference."
+}
+```

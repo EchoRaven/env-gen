@@ -1,0 +1,76 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.68,
+      "notes": "Both have a full-bleed hero under a transparent top nav, with a breadcrumb at the top left, the title, synopsis and CTAs in the lower left, and a tile row at the bottom. In the implementation the tiles sit in a wrapping multi-row grid (a second row starts underneath). The reference uses a single horizontal carousel that bleeds off the right edge and is followed by more titled rows ('TV Comedies…'). The row heading above the tiles is missing.",
+      "fix": "Make the genre content a stack of titled horizontal carousel rows: one line of 16:9 tiles that overflows to the right with a peeking tile, then the next titled row below it."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: logo, 7 nav items, search, bell, avatar with caret, breadcrumb, hero title, synopsis, Play and More Info buttons, tiles with TOP-N badges. Missing: the active-pill state on the current nav item, the Kids profile link, the large page-title breadcrumb, the mute/volume button and maturity-rating badge on the right of the hero, the row heading, the bottom-of-tile badges ('Recently Added', 'New Season', 'Live Now'), the carousel page indicator, and the small title tag in the hero. Added: title and 'Movie · 2026' captions under every tile, which the reference doesn't have.",
+      "missing": [
+        "active nav pill highlight",
+        "Kids profile link next to avatar",
+        "large page-title breadcrumb (parent > genre title)",
+        "hero mute/volume circular button",
+        "maturity rating badge (TV-14 style) on right edge",
+        "row section heading ('Your Next Watch')",
+        "bottom-centered red tile status badges",
+        "carousel page indicator dashes",
+        "small title tag chip in hero"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use a dark, cinematic, flat design with square-ish tiles, slightly rounded buttons and a bottom gradient fade into the rows. The reference is bigger and bolder overall: large nav text, large synopsis, chunky buttons. The implementation is smaller and denser, and its captions under the tiles make it feel more like a utility grid.",
+      "fix": "Scale up the nav, synopsis and CTA sizes, and remove the under-tile captions so the tiles stay pure artwork."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark base, Netflix-red wordmark and badges, white Play button, translucent grey More Info button, and dark bottom gradient. Nav colours are comparable, but the active item has no lighter grey pill.",
+      "fix": "Put a translucent grey pill behind the active nav item, with white text."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use sans-serif UI text and a red condensed display title. The reference nav is about 17px with an emphasised active item, while the implementation's is about 13px. The reference breadcrumb ends in a large, roughly 44px white page title, but the implementation's breadcrumb is small grey text throughout. The reference synopsis is about 22px; the implementation's is about 14px and wider. The row heading (about 26px, white) is missing.",
+      "fix": "Nav about 17px. Breadcrumb as a small grey parent link, then '>', then a 44px white genre title. Synopsis about 22px at a max-width of about 670px. Row headings about 26px, medium weight, white."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "Search, bell, info-circle and avatar icons match in style. The Play icon is an outlined triangle where the reference uses a solid black one. The avatar is a letter tile rather than an illustrated rounded square, which is acceptable. There's no Kids icon and no mute icon. The tiles use the same 16:9 cover crop, and the TOP badge placement matches.",
+      "fix": "Use a solid filled Play triangle. Add the Kids profile icon with its label, and a circular outlined mute icon at the right of the hero."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels, 'Play' and 'More Info' match. The breadcrumb uses 'Browse / Action' where the reference uses 'TV Shows > Sports TV Shows': the separator is '/' instead of '>', and the parent label differs. There's no row heading copy and no 'Kids' label.",
+      "fix": "Use '>' as the breadcrumb separator, name the parent after the section (e.g. 'TV Shows' or 'Movies'), phrase the page title as '<Genre> TV Shows' or '<Genre> Movies', and add titled row headings."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "Content below the hero: the implementation uses a wrapping multi-row tile grid; the reference has a single horizontal carousel row that overflows to the right, followed by more titled rows.",
+    "Row header: the reference has a 'Your Next Watch' style heading above the tiles; the implementation has none.",
+    "Tiles: the implementation adds a title and 'Movie · 2026' caption under each tile; the reference tiles are artwork only.",
+    "Breadcrumb at top left: the reference ends with a large white page title ('Sports TV Shows' size); the implementation shows small grey 'Browse / Action' text with a '/' separator.",
+    "Right side of the hero: the reference has a circular mute button and a TV-14 maturity badge flush to the right edge; neither appears in the implementation.",
+    "Top nav: the reference highlights the active item with a grey pill and uses larger, roughly 17px labels; the implementation has no active state and roughly 13px labels.",
+    "Top right: the reference has a Kids profile icon and label before the avatar; the implementation omits it.",
+    "Tile badges: the reference has red bottom-centred status badges ('Recently Added', 'New Season', 'Live Now'); the implementation only shows one 'NEW' badge and relies on captions.",
+    "Hero synopsis: the reference uses a larger, roughly 22px font in a narrower column; the implementation's is smaller (about 14px) and wider.",
+    "Play button: the reference uses a solid filled triangle icon; the implementation uses an outlined one.",
+    "Carousel page indicator dashes at the top right of the row are missing."
+  ],
+  "fixes": [
+    "Replace the tile grid with stacked horizontal carousel rows. Each row gets a roughly 26px white heading, a single line of 16:9 tiles that bleeds off the right edge, and page-indicator dashes at the top right.",
+    "Remove the captions under the tiles. Show status as red bottom-centred pills ('Recently Added', 'New Season') and keep the TOP-N corner badges.",
+    "Restyle the breadcrumb: grey parent link, then '>', then a roughly 44px white page title.",
+    "Add a circular mute button and a maturity-rating badge with a translucent dark background, flush to the right edge at the height of the hero CTAs.",
+    "Raise nav labels to about 17px and give the active item a translucent grey pill.",
+    "Add the Kids profile icon and 'Kids' label between the bell and the avatar.",
+    "Increase the hero synopsis to about 22px with a max-width of about 670px, and use a solid filled Play icon in a larger button."
+  ],
+  "summary": "The implementation has the Netflix hero and nav skeleton and colour system, but its content is a captioned multi-row grid rather than titled horizontal carousels. It's also missing the large breadcrumb title, the active nav pill, the Kids link, the mute and rating badge, and uses smaller typography throughout."
+}
+```

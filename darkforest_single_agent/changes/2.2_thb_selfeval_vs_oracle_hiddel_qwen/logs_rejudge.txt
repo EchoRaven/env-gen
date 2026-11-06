@@ -1,0 +1,52 @@
+2026-11-05T17:27:23-05:00 rejudge r0-it10
+r0-it10: mean 0.531 scored 18 limit-messages 0
+2026-11-05T17:33:27-05:00 rejudge r0-it11
+r0-it11: mean 0.528 scored 18 limit-messages 0
+2026-11-05T17:39:45-05:00 rejudge r0-it12
+r0-it12: mean 0.531 scored 18 limit-messages 0
+2026-11-05T17:46:01-05:00 rejudge r0-it13
+r0-it13: mean 0.53 scored 18 limit-messages 0
+2026-11-05T17:52:08-05:00 rejudge r0-it14
+r0-it14: mean 0.53 scored 18 limit-messages 0
+2026-11-05T17:58:27-05:00 rejudge r0-it3
+r0-it3: mean 0.527 scored 17 limit-messages 3
+2026-11-05T18:04:13-05:00 usage limit again; sleeping 30 min
+2026-11-05T18:34:13-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T18:34:29-05:00 usage limit again; sleeping 30 min
+2026-11-05T19:04:29-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T19:04:45-05:00 usage limit again; sleeping 30 min
+2026-11-05T19:34:45-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T19:35:01-05:00 usage limit again; sleeping 30 min
+2026-11-05T20:05:01-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T20:05:17-05:00 usage limit again; sleeping 30 min
+2026-11-05T20:35:17-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T20:35:33-05:00 usage limit again; sleeping 30 min
+2026-11-05T21:05:33-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T21:05:49-05:00 usage limit again; sleeping 30 min
+2026-11-05T21:35:49-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T21:36:05-05:00 usage limit again; sleeping 30 min
+2026-11-05T22:06:05-05:00 rejudge r0-it18
+r0-it18: mean None scored 0 limit-messages 54
+2026-11-05T22:06:21-05:00 usage limit again; sleeping 30 min
+2026-11-05T22:36:21-05:00 rejudge r0-it18
+r0-it18: mean 0.538 scored 18 limit-messages 0
+2026-11-05T22:42:20-05:00 rejudge r0-it19
+r0-it19: mean 0.534 scored 18 limit-messages 0
+2026-11-05T22:48:31-05:00 rejudge r0-it20
+r0-it20: mean 0.536 scored 18 limit-messages 0
+2026-11-05T22:54:40-05:00 rejudge r0-it3
+r0-it3: mean 0.522 scored 18 limit-messages 0
+2026-11-05T23:00:53-05:00 rejudge r0-it5
+r0-it5: mean 0.521 scored 18 limit-messages 0
+2026-11-05T23:07:04-05:00 rejudge r0-it6
+r0-it6: mean 0.521 scored 18 limit-messages 0
+2026-11-05T23:13:14-05:00 rejudge r0-it7
+r0-it7: mean 0.525 scored 18 limit-messages 0
+2026-11-05T23:19:34-05:00 rejudge r0-it8

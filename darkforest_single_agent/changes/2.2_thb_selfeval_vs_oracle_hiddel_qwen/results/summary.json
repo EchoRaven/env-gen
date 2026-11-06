@@ -1,0 +1,784 @@
+{
+ "selfval": [
+  {
+   "iter": 1,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "12/15",
+   "validate_calls": 3,
+   "wall_min": 62.8,
+   "hidden": {
+    "api": "47/49",
+    "ui": "20/21",
+    "ui_failed": [
+     "the title detail and My List steps ran"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": 0.542,
+    "visual_scored": 17,
+    "errors": [],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 2,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 2,
+   "wall_min": 55.5,
+   "hidden": null
+  },
+  {
+   "iter": 3,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 2,
+   "wall_min": 67.1,
+   "hidden": null
+  },
+  {
+   "iter": 4,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 36.9,
+   "hidden": {
+    "api": "46/49",
+    "ui": "18/21",
+    "ui_failed": [
+     "nav 'Browse by Languages' opens its screen",
+     "the title detail and My List steps ran",
+     "no console errors during the walk"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": 0.519,
+    "visual_scored": 17,
+    "errors": [],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 5,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 6.1,
+   "hidden": null
+  },
+  {
+   "iter": 6,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 20.5,
+   "hidden": null
+  },
+  {
+   "iter": 7,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 57.8,
+   "hidden": null
+  },
+  {
+   "iter": 8,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 4,
+   "wall_min": 67.2,
+   "hidden": {
+    "api": "46/49",
+    "ui": "18/21",
+    "ui_failed": [
+     "nav 'Browse by Languages' opens its screen",
+     "the title detail and My List steps ran",
+     "no console errors during the walk"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": 0.525,
+    "visual_scored": 17,
+    "errors": [],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 9,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 44.5,
+   "hidden": null
+  },
+  {
+   "iter": 10,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 29.7,
+   "hidden": null
+  },
+  {
+   "iter": 11,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 71.2,
+   "hidden": null
+  },
+  {
+   "iter": 12,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 43.0,
+   "hidden": {
+    "api": "46/49",
+    "ui": "18/21",
+    "ui_failed": [
+     "nav 'Browse by Languages' opens its screen",
+     "the title detail and My List steps ran",
+     "no console errors during the walk"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": 0.507,
+    "visual_scored": 17,
+    "errors": [],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 13,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 7,
+   "wall_min": 106.4,
+   "hidden": {
+    "api": "46/49",
+    "ui": "6/22",
+    "ui_failed": [
+     "browse home has a hero billboard (>=60% wide)",
+     "browse home shows poster rails (>=10 images loaded)",
+     "nav 'Home' opens its screen",
+     "nav 'Shows' opens its screen",
+     "nav 'Movies' opens its screen",
+     "nav 'Games' opens its screen",
+     "nav 'New & Popular' opens its screen",
+     "nav 'My List' opens its screen",
+     "nav 'Browse by Languages' opens its screen",
+     "clicking a poster opens the title detail with Play",
+     "+ My List from the detail shows up on My List",
+     "another profile's My List does not show it",
+     "search finds a title by name",
+     "Play opens /watch/:id with a loadable video",
+     "the account menu offers Sign out",
+     "no console errors during the walk"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": 0.298,
+    "visual_scored": 10,
+    "errors": [],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 14,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "13/15",
+   "validate_calls": 1,
+   "wall_min": 26.7,
+   "hidden": null
+  },
+  {
+   "iter": 15,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "15/15",
+   "validate_calls": 1,
+   "wall_min": 21.8,
+   "hidden": null
+  },
+  {
+   "iter": 16,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "15/15",
+   "validate_calls": 1,
+   "wall_min": 4.6,
+   "hidden": {
+    "api": "42/49",
+    "ui": "4/5",
+    "ui_failed": [
+     "walk did not crash"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": null,
+    "visual_scored": null,
+    "errors": [
+     "visual_capture"
+    ],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 17,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "15/15",
+   "validate_calls": 1,
+   "wall_min": 7.5,
+   "hidden": null
+  },
+  {
+   "iter": 18,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "15/15",
+   "validate_calls": 1,
+   "wall_min": 5.2,
+   "hidden": null
+  },
+  {
+   "iter": 19,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "15/15",
+   "validate_calls": 1,
+   "wall_min": 2.7,
+   "hidden": null
+  },
+  {
+   "iter": 20,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "15/15",
+   "validate_calls": 1,
+   "wall_min": 1.0,
+   "hidden": {
+    "api": "43/49",
+    "ui": "4/5",
+    "ui_failed": [
+     "walk did not crash"
+    ],
+    "static": [],
+    "dev_fingerprints": 2,
+    "visual": null,
+    "visual_scored": null,
+    "errors": [
+     "visual_capture"
+    ],
+    "rejudged": 0
+   }
+  }
+ ],
+ "hidden": [
+  {
+   "iter": 1,
+   "passed": false,
+   "checks": "2/3",
+   "chain": "0/0",
+   "endpoints": "0/0",
+   "wall_min": 65.8,
+   "hidden": {
+    "api": null,
+    "ui": null,
+    "ui_failed": null,
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": null,
+    "errors": [
+     "stack"
+    ],
+    "rejudged": 0
+   },
+   "notes": [
+    "hidden errors: stack"
+   ]
+  },
+  {
+   "iter": 2,
+   "passed": false,
+   "checks": "2/3",
+   "chain": "0/0",
+   "endpoints": "0/0",
+   "wall_min": 14.1,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.523,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 3,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "7/8",
+   "endpoints": "11/15",
+   "wall_min": 6.7,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.527,
+    "visual_scored": 17,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 4,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 11.0,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.519,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 5,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 4.4,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 6,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 5.3,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 7,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 7.3,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 8,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 10.4,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 9,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 5.0,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 10,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 5.8,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.531,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 11,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 5.3,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.528,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 12,
+   "passed": false,
+   "checks": "2/3",
+   "chain": "0/0",
+   "endpoints": "0/0",
+   "wall_min": 2.8,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.531,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "infra clash; post-hoc rescore: passed=True 14/14",
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 13,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 2.8,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.53,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 14,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 2.1,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.53,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 1
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 15,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 4.7,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.531,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 16,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 13.9,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.533,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 17,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 6.1,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": 0.534,
+    "visual_scored": 18,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 18,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 3.9,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 8
+   },
+   "notes": [
+    "visual re-judged"
+   ]
+  },
+  {
+   "iter": 19,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 10.6,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  },
+  {
+   "iter": 20,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 7.3,
+   "hidden": {
+    "api": "46/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [],
+    "dev_fingerprints": 1,
+    "visual": null,
+    "visual_scored": 0,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": []
+  }
+ ],
+ "totals": {
+  "selfval_hours_tokens_out": [
+   12.3,
+   19758590
+  ],
+  "hidden_hours_tokens_out": [
+   3.26,
+   5668703
+  ]
+ }
+}

@@ -1,0 +1,134 @@
+{
+ "frontend": "http://127.0.0.1:31080",
+ "account": "tour127804@example.com",
+ "log": [
+  {
+   "step": 1,
+   "name": "landing",
+   "url": "http://127.0.0.1:31080/"
+  },
+  {
+   "register": 200
+  },
+  {
+   "step": 2,
+   "name": "login",
+   "url": "http://127.0.0.1:31080/login"
+  },
+  {
+   "step": 3,
+   "name": "after_sign_in",
+   "url": "http://127.0.0.1:31080/profiles"
+  },
+  {
+   "profile_clicked": "\ud83d\ude42\nTour"
+  },
+  {
+   "step": 4,
+   "name": "home",
+   "url": "http://127.0.0.1:31080/browse"
+  },
+  {
+   "step": 5,
+   "name": "home_rows",
+   "url": "http://127.0.0.1:31080/browse"
+  },
+  {
+   "nav_links": [
+    [
+     "Home",
+     "/browse"
+    ],
+    [
+     "Shows",
+     "/shows"
+    ],
+    [
+     "Movies",
+     "/movies"
+    ],
+    [
+     "Games",
+     "/games"
+    ],
+    [
+     "New & Popular",
+     "/new"
+    ],
+    [
+     "My List",
+     "/mylist"
+    ],
+    [
+     "Browse by Languages",
+     "/browse/languages"
+    ]
+   ]
+  },
+  {
+   "step": 6,
+   "name": "nav_home",
+   "url": "http://127.0.0.1:31080/browse"
+  },
+  {
+   "step": 7,
+   "name": "nav_shows",
+   "url": "http://127.0.0.1:31080/shows"
+  },
+  {
+   "step": 8,
+   "name": "nav_movies",
+   "url": "http://127.0.0.1:31080/movies"
+  },
+  {
+   "step": 9,
+   "name": "nav_games",
+   "url": "http://127.0.0.1:31080/games"
+  },
+  {
+   "step": 10,
+   "name": "nav_new_popular",
+   "url": "http://127.0.0.1:31080/new"
+  },
+  {
+   "step": 11,
+   "name": "nav_my_list",
+   "url": "http://127.0.0.1:31080/mylist"
+  },
+  {
+   "step": 12,
+   "name": "nav_browse_by_languages",
+   "url": "http://127.0.0.1:31080/browse/languages"
+  },
+  {
+   "cards_on_home": 48
+  },
+  {
+   "step": 13,
+   "name": "card_hover",
+   "url": "http://127.0.0.1:31080/browse"
+  },
+  {
+   "step": 14,
+   "name": "title_open",
+   "url": "http://127.0.0.1:31080/browse"
+  },
+  {
+   "step": 15,
+   "name": "player",
+   "url": "http://127.0.0.1:31080/watch/29"
+  },
+  {
+   "video": {
+    "src": "http://127.0.0.1:31080/media/video/clip_35079542.mp4",
+    "t": 0,
+    "paused": true,
+    "err": 4
+   }
+  }
+ ],
+ "console_errors": [],
+ "failed_requests": [
+  "http://127.0.0.1:31080/media/video/clip_35079542.mp4"
+ ]
+}

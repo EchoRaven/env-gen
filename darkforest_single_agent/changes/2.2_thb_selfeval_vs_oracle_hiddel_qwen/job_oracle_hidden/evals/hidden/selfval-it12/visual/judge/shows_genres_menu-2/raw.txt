@@ -1,0 +1,74 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "The top nav, the 'TV Shows' heading, the full-bleed hero and the 'Today's Top Picks' row all appear in the same order. Several things are out of place. The Genres dropdown sits at the far right, but the reference puts it directly beside the 'TV Shows' title at about x=310. The menu opens as a narrow single column clipped at the right edge, but the reference uses a wide 3-column grid panel below the button. The title row sits lower, at y≈185 instead of y≈128. The hero title lockup is indented to about x=110 instead of aligning with the 67px gutter. The row of cards starts lower and is cut off.",
+      "fix": "Put the Genres button inline, right of the 'TV Shows' heading (about 50px gap) at y≈128. Anchor the menu under the button's left edge as a roughly 470px-wide 3-column grid. Align the hero lockup and buttons to the 67px left gutter. Raise the row so the cards are fully visible above the fold."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The nav items match: Home, Shows, Movies, Games, New & Popular, My List and Browse by Languages, plus search, bell and the profile caret. Some components are missing or different. The 'Kids' profile link and icon are missing. Shows has no pill highlight for its active state. The hero shows only a small red square play icon, while the reference has a white 'Play' button with a label and a grey 'More Info' button. The mute toggle and the TV-MA rating flag on the right edge are missing. The genre menu is a short single list that cuts off after 9 items, while the reference has a 3-column grid of about 26 items. Cards have no TOP 10 badges and no 'Recently Added'/'New Season' ribbons. The implementation adds things the reference does not have: a synopsis paragraph and a match%/year/seasons/rating metadata row.",
+      "missing": [
+        "Kids profile link in header",
+        "pill highlight on active 'Shows' nav item",
+        "white 'Play' button with label",
+        "grey 'More Info' button with info icon",
+        "mute/volume toggle circle",
+        "TV-MA maturity rating flag on right edge",
+        "3-column genre grid menu",
+        "TOP 10 badges on cards",
+        "'Recently Added'/'New Season' ribbons on cards"
+      ],
+      "fix": "Add a Kids link before the avatar and a rounded translucent pill behind the active 'Shows'. Replace the red icon button with a white 'Play' button (play icon + label) and a grey translucent 'More Info' button. Add a circular mute button and a TV-MA flag with a left border at the right edge. Remove the synopsis and metadata row. Render all genres in a 3-column grid. Add TOP 10 corner badges and red bottom ribbons to cards."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat cinematic dark designs with full-bleed hero art. The reference's genre menu is a near-black, square-cornered panel with tight rows of about 29px. The implementation's is a bordered dark list with looser rows of about 36px. The reference Genres button is a black box with a thin white border and a filled caret. The implementation uses a rounded white-outline button with a chevron. The nav type in the implementation is small and dense, and there is no active pill.",
+      "fix": "Style the menu as a square black (rgba 0,0,0,0.9) panel with a thin border and about 29px row height. Make the Genres button a square black box with a 1px white border and a filled triangle caret. Use rounded 4px buttons in the hero."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "The dark scheme, red Netflix wordmark and white text match. The implementation brings in a red play button and a green match % that the reference does not have. The reference CTAs are white and translucent grey. The red card ribbons are missing.",
+      "fix": "Make the Play button white with black text and More Info translucent grey (rgba 109,109,110,0.7) with white text. Drop the green match % and use red only for the logo and badges."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use sans-serif type. The nav labels in the implementation are about 13px, while the reference uses about 17px. The 'TV Shows' heading is about 26px instead of the reference's roughly 40px. The genre items are similar in size. The row heading is smaller than in the reference.",
+      "fix": "Raise the nav labels to about 17px, the 'TV Shows' heading to about 40px, the Genres button label to about 17px, and the row title to about 26px."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "The search, bell and caret icons match in outline style. The avatar is a purple letter tile, while the reference shows a blue smiley rounded square. There is no Kids icon. The Genres caret is a chevron instead of a filled triangle. The play triangle sits on red instead of white. The info-circle icon is missing. Card aspect ratio and crop are close to the reference.",
+      "fix": "Use a filled triangle caret on Genres, put a black play icon on the white button, add an outlined info-circle icon to More Info, add the Kids icon, and add the mute speaker icon."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The nav labels, 'TV Shows', 'Genres' and 'Today's Top Picks for You' match. The genre list uses different wording ('Comedy', 'Drama', 'Documentary', 'Action & Adventure'), where the reference uses 'Comedies', 'Dramas', 'Documentaries', 'Classic & Cult' and so on. The 'Play'/'More Info' labels are missing, as is the 'Kids' label.",
+      "fix": "Use Netflix-style plural genre labels (Comedies, Dramas, Documentaries, Classic & Cult, K-Dramas, Stand-Up & Talk Shows…). Add 'Play' and 'More Info' button text and the 'Kids' header label."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "genre menu: the implementation shows a narrow single-column list clipped at the right edge, while the reference shows a wide 3-column grid panel under the Genres button",
+    "Genres button: placed at the far right of the page instead of inline next to the 'TV Shows' heading",
+    "hero CTAs: a lone red square play icon replaces the reference's white 'Play' button and grey 'More Info' button",
+    "hero: an extra synopsis paragraph and a match%/year/seasons/rating metadata row are added, which the reference does not show",
+    "hero right edge: the mute toggle and TV-MA rating flag are missing",
+    "header: the 'Kids' profile link is missing, and active 'Shows' has no pill background",
+    "row cards: TOP 10 badges and red 'Recently Added'/'New Season' ribbons are missing",
+    "typography: nav and 'TV Shows' heading are noticeably smaller than in the reference",
+    "hero lockup is indented to about x=110 instead of aligning with the 67px page gutter"
+  ],
+  "fixes": [
+    "Move the Genres dropdown inline right of the 'TV Shows' heading and render its menu as a square black 3-column grid anchored under the button",
+    "Replace the red play icon with a white 'Play' button and a grey translucent 'More Info' button, and remove the synopsis and metadata row",
+    "Add the circular mute button and TV-MA flag at the right edge of the hero",
+    "Add the Kids link and a pill highlight on the active Shows nav item",
+    "Add TOP 10 badges and red bottom ribbons to row cards",
+    "Increase the nav type to about 17px and the 'TV Shows' heading to about 40px, and align the hero to the 67px gutter"
+  ],
+  "summary": "The implementation has the same Netflix shows page skeleton, but the Genres menu is the wrong shape and in the wrong place, and the hero CTAs, rating flag, Kids link and card badges diverge from the reference."
+}
+```

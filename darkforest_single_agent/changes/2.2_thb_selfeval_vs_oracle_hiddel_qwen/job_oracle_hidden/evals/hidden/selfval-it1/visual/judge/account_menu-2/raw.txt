@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "In both, the account dropdown opens top-right under the avatar and caret, right-aligned with the content edge, over the same dark top-bar layout. The page underneath is different. The reference opens the menu over the Browse by Languages grid, which has a page title, a 'Select Your Preferences' language dropdown, a 6-column tile grid and an expanded hover card. The implementation opens it over the Home hero billboard with titled carousels. The reference's menu is wider (~275px) and taller, with roomy rows. The implementation's menu is narrower and compact.",
+      "fix": "Make the menu ~275px wide with ~58px rows, anchored ~10px below the avatar and right-aligned with the content edge. Open it over the screen the reference uses, or keep it independent of the page underneath."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Manage Profiles, Account and Sign out of Netflix are present. Missing: the profile row at the top of the list (Kids avatar and label), Transfer Profile, Help Center, the leading icon on every row, and the single divider above Sign out. The 'Signed in as …' header row is invented. In the top bar, the reference shows a second profile chip (kids avatar and 'Kids' label) between the bell and the main avatar; the implementation has none.",
+      "missing": ["profile switch row (avatar + profile name) at top of menu", "Transfer Profile item", "Help Center item", "leading icons on menu items (pencil, transfer, person, question-circle)", "divider separating Sign out section", "header profile chip (kids avatar + 'Kids' label) next to the avatar"],
+      "fix": "Replace the 'Signed in as' row with profile rows (rounded-square avatar + name). Then add Manage Profiles (pencil), Transfer Profile (transfer icon), Account (person) and Help Center (question-circle), a hairline divider, and 'Sign out of Netflix'. Add the profile avatar + label chip to the top bar, left of the main avatar."
+    },
+    "style": {
+      "score": 0.4,
+      "notes": "Reference menu: an elevated panel with ~6–8px rounded corners, a soft dark surface, no borders between items, airy padding and one divider. Implementation menu: square corners, a visible outline border, a hairline divider between every row, and dense, cramped padding.",
+      "fix": "Give the menu a border-radius of ~8px, no outer border and a soft shadow. Remove the per-row dividers and keep only the one above Sign out. Use ~16px horizontal and ~18px vertical padding per row."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use a dark scheme with white text and Netflix red for the wordmark. The reference menu surface is a lifted charcoal (~#1f1f1f) against the page. The implementation is near-black with a grey border. Its 'Signed in as' text is a muted grey that the reference doesn't use.",
+      "fix": "Set the menu background to ~#1f1f1f / rgba(30,30,30,0.95) with white text, and the divider to ~#333."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "Both use a sans-serif. Reference menu items are ~17–18px regular. Implementation items are ~14px. The top-bar nav is also smaller in the implementation (~13px vs ~17px). In the reference, the active nav item 'Browse by Languages' is semibold inside a grey pill. The implementation marks the active item ('Home') with bold only, no pill.",
+      "fix": "Set menu items to ~17px regular white and nav links to ~17px. Style the active nav item as semibold inside a grey rounded pill (~#333, radius ~20px)."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "The reference has outline line icons (~24px, thin stroke) before every menu item, and rounded-square profile avatars in the menu and the header. The implementation menu has no icons at all. The search, bell and caret icons in the header match in style.",
+      "fix": "Add 24px outline icons to the left of each item: pencil, transfer/person-arrow, person and question-circle. Put a rounded-square profile avatar on each profile row, with ~14px between icon and label."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Signed in as …' is not in the reference. 'Transfer Profile', 'Help Center' and the profile name row are absent.",
+      "fix": "Remove 'Signed in as …'. Add 'Transfer Profile', 'Help Center' and the profile name rows, keeping the existing labels."
+    }
+  },
+  "similarity": 0.48,
+  "empty_state": false,
+  "deviations": [
+    "account menu items: no leading outline icons, which the reference shows on every row (pencil, transfer, person, help)",
+    "account menu top: the reference starts with a profile row (rounded-square avatar + profile name); the implementation shows an invented 'Signed in as …' header",
+    "account menu list: 'Transfer Profile' and 'Help Center' are missing",
+    "account menu surface: square corners, an outline border and dividers between every row, where the reference is a rounded, borderless panel with one divider above Sign out",
+    "account menu sizing: the implementation is narrower, with ~14px text and tight rows; the reference is ~275px wide with ~18px text and roomy rows",
+    "top bar right: the profile chip (avatar + 'Kids' label) between the bell and the main avatar is missing",
+    "top bar nav: smaller text, and the active item has no grey pill highlight",
+    "page under the menu: Home hero and carousels instead of the Browse by Languages title, language selector and tile grid"
+  ],
+  "fixes": [
+    "Restyle the dropdown: ~275px wide, ~8px radius, #1f1f1f background, no outer border, no per-row dividers, ~58px rows, 17px white text",
+    "Replace 'Signed in as' with profile rows (rounded-square avatar + name)",
+    "Add 24px outline icons and the full item list: Manage Profiles, Transfer Profile, Account, Help Center",
+    "Add one hairline divider, then 'Sign out of Netflix' as the last row with no icon",
+    "Add the profile avatar + label chip to the top bar, left of the main avatar",
+    "Enlarge nav links to ~17px and show the active item as a semibold label inside a grey pill"
+  ],
+  "summary": "The dropdown is in the right place, but it's a bare square list: no icons, no profile row, no Transfer Profile or Help Center, an invented 'Signed in as' row, and it's denser and smaller than the reference's rounded, iconified menu."
+}
+```

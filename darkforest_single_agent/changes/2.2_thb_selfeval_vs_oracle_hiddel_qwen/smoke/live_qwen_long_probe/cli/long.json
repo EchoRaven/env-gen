@@ -1,0 +1,18 @@
+{
+  "session_id": "01a1aa78-9c7c-7dd2-9565-489cdd56737f",
+  "num_turns": 3,
+  "commands": 0,
+  "usage": {
+    "input_tokens": 199889,
+    "cached_input_tokens": 4704,
+    "cache_write_input_tokens": 194432,
+    "output_tokens": 51,
+    "reasoning_output_tokens": 38
+  },
+  "is_error": false,
+  "result": "\n\nAMBER-7319-MAPLE",
+  "_rc": 0,
+  "_wall_s": 138.8,
+  "_prompt_tokens": 194749,
+  "_prompt_bytes": 622151
+}

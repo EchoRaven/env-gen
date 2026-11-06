@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The overall structure matches: a centered dark modal (~1080px wide) over a dimmed home page, a description block at the top, an 'Episodes' header with a control on the right, and a vertical list of episode rows separated by hairlines. The order inside each row is different, though. The reference goes number, then thumbnail, then a text column with the title and the duration on one line. The implementation puts the thumbnail first and the number second, and places the duration in its own column at the far right, vertically centered. Behind the modal, the reference hero is an inset card with rounded corners; the implementation's hero is full-bleed.",
+      "fix": "Reorder each episode row to [index ~60px, centered] → [thumbnail ~170x96] → [text column]. Put the title and the runtime on the same first line (title on the left, runtime right-aligned at the end of the title line, not at the row's far right), with the description below."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "The modal, the description, the Episodes heading, the episode rows (index, thumbnail, title, runtime, synopsis), the hairline dividers and the highlighted row are all present. Differences: every thumbnail has a play button overlay, where the reference shows one only on the hovered row and centers it on the thumbnail. The implementation adds a 'Genres:' row that the reference does not show; the reference shows a 'This show is:' tag line in the top-right column instead. The highlighted row is row 3 here and row 1 in the reference. The right side of the header is a '4 Seasons' label plus a native select box; the reference shows plain text at that spot, which is acceptable because the seasons data differs, but the native select styling does not match.",
+      "missing": [
+        "'This show is:' tag line in the right column above Episodes",
+        "Play button shown only on hover, centered on the thumbnail"
+      ],
+      "fix": "Show the play button only on the hovered or active row, centered on the thumbnail with a large translucent circle and a white outline. Replace the Genres row with a right-column 'This show is:' line. Style the season control as a dark Netflix-style dropdown instead of a native select."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both are flat dark surfaces with hairline dividers and a lighter-gray background on the highlighted row. In the reference, the highlighted row has slightly rounded corners and the content around it has more padding. The implementation's rows are a bit tighter.",
+      "fix": "Give the active row ~4px corner radius and a #333 background, and add a little more vertical padding to each row."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The color scheme matches: a dark #181818 modal, a darkened backdrop, white text and a gray secondary tone. The synopsis text in the implementation is a dimmer gray than the reference, which uses a light gray close to white.",
+      "fix": "Lighten the episode synopsis color to about #d2d2d2."
+    },
+    "typography": {
+      "score": 0.62,
+      "notes": "In the reference, episode titles are bold (~17px), synopses are ~15px with a comfortable line height, and the index numerals are large (~24px) and light. In the implementation, titles are regular weight, synopses are small (~13px) and dim, and the numerals are smaller and gray. The 'Episodes' heading matches.",
+      "fix": "Make episode titles 16–17px bold and white, synopses 14–15px with ~1.45 line height in light gray, index numerals ~24px in white/light gray, and runtimes 16px in white."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Thumbnails use a 16:9 cover crop at a similar size. The play icons differ: the implementation puts a small filled circle in the bottom-right corner of every thumbnail, while the reference shows one large outlined circle in the center of a single thumbnail. The other icons in the nav behind the modal are similar.",
+      "fix": "Replace the per-thumbnail corner play badge with a single centered, outlined play circle (~48px) that appears on hover."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading matches and runtimes use the same 'XXm' format. The extra 'Genres:' label and the '4 Seasons' label add copy that the reference does not show at that spot.",
+      "fix": "Drop the 'N Seasons' label next to the selector, and move the genre/tag metadata into the right column in the 'This show is:' style."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "episode rows: the implementation orders them thumbnail → number; the reference orders them number → thumbnail",
+    "episode rows: the runtime sits in a separate far-right column, vertically centered; in the reference it sits at the end of the title line",
+    "thumbnails: the implementation shows a play button on every thumbnail (bottom-right); the reference shows one large centered play circle, on the hovered row only",
+    "episode titles: regular weight in the implementation, bold in the reference; synopsis text is smaller and dimmer than in the reference",
+    "index numerals: smaller and gray in the implementation, large and near-white in the reference",
+    "Episodes header right side: a native select box plus a '4 Seasons' label, instead of the reference's plain text",
+    "above Episodes: an extra 'Genres:' row in the implementation; the reference has a 'This show is:' line in the right column",
+    "highlighted row: in the reference it has rounded corners and sits at row 1"
+  ],
+  "fixes": [
+    "Restructure each episode row as: centered index (24px, light) → 16:9 thumbnail → text column whose first line is the bold title with the runtime right-aligned on the same line, followed by the synopsis",
+    "Remove the always-visible corner play badges and show one centered, outlined play circle on the hovered row's thumbnail",
+    "Set the title to ~17px bold white and the synopsis to ~15px light gray (#d2d2d2) with ~1.45 line height",
+    "Give the active/hover row a #333 background with ~4px radius",
+    "Replace the native season select with a dark styled dropdown or plain text, and drop the 'N Seasons' label",
+    "Move the genre metadata into a right-column 'This show is:' line and remove the Genres row above Episodes"
+  ],
+  "summary": "The modal-over-home episode list matches structurally, but the row layout (thumbnail before number, runtime in its own column), the play buttons on every thumbnail and the weaker title typography move it noticeably away from the reference."
+}
+```

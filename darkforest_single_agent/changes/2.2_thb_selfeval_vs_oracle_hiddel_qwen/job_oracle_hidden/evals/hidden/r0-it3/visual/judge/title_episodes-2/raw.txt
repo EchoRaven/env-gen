@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The overall structure matches: a centered dark modal over a dimmed home page, an 'Episodes' header row, and a vertical list of episode rows split by hairline dividers. The differences are in placement. In the reference each row reads number, then thumbnail, then title/description, with the duration aligned to the title line. The implementation puts the thumbnail first, then the number, and centers the duration vertically. The reference modal is wider (~1085px) than the implementation's (~940px). Behind the modal, the reference hero is an inset card with rounded corners; the implementation's hero is full-bleed.",
+      "fix": "Change each row to [episode number ~48px column] [thumbnail ~170x96] [title + duration on one line, description below]. Align the duration to the title baseline, top-right. Widen the modal to ~1085px."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "Present: Episodes heading, episode rows with number, thumbnail, title, description and duration, a highlighted row state, and dividers. Differences: the implementation adds a '4 Seasons' label and a native 'Season 1' select on the right of the header, while the reference shows only plain text (the season/title name) there. The implementation draws a play-circle overlay on every thumbnail; the reference shows one only on the hovered row's thumbnail. In the reference header behind the modal, Home is an active pill and there is a 'Kids' profile link; the implementation has neither.",
+      "missing": ["Kids profile link in the top nav", "pill-style active state on the 'Home' nav item"],
+      "fix": "Replace the '4 Seasons' label and select with plain right-aligned text (or a styled, borderless dropdown). Show the play overlay only on the hovered row. Add the Kids link and the pill-style active Home tab to the header."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use a flat dark modal, hairline dividers and a lighter-grey highlighted row. The reference highlighted row has a slightly rounded rectangle and roomier padding (~146px per row, with larger text). The implementation's native select with a white border is out of place in the design.",
+      "fix": "Give the highlighted row a ~4px radius and a #333 fill. Remove the bordered native select. Match the row padding to the reference."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark scheme: modal ~#181818 on a dimmed backdrop, and a grey surface on the active row. Reference descriptions are near-white (#d2d2d2); the implementation's are a dimmer grey.",
+      "fix": "Lighten the episode descriptions to ~#d2d2d2 and keep the titles pure white."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "The reference episode titles are bold and ~17px, descriptions ~15px, episode numbers large (~26px) and white, and the 'Episodes' heading is ~26px bold. The implementation's titles are regular weight and smaller, its descriptions ~13px, and its numbers smaller and greyer.",
+      "fix": "Set episode titles to 17px bold, descriptions to 15px with ~1.5 line height, episode numbers to 26px in light grey/white, and the duration to 17px."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use a 16:9 thumbnail with a square crop. The reference shows a large, centered, translucent play-circle on the hovered thumbnail only. The implementation shows a small play-circle in the bottom-right corner of every thumbnail.",
+      "fix": "Remove the always-on play icons. On row hover, show a large (~52px), centered, outlined, semi-transparent play circle."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The 'Episodes' heading matches. The implementation adds a '4 Seasons' label and 'Season 1' select text that the reference does not have, and a 'Genres:' line where the reference's right column reads 'This Show Is:'.",
+      "fix": "Drop the '4 Seasons' label. Keep the right side of the header to a single plain label."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "episode rows: the reference puts the number before the thumbnail; the implementation puts the thumbnail first, then the number",
+    "Episodes header right side: the reference has plain text; the implementation adds a '4 Seasons' label and a bordered native 'Season 1' select",
+    "thumbnails: the implementation shows a small play icon on every thumbnail; the reference shows one large centered play circle only on the hovered row",
+    "episode text: reference titles are bold and larger, with larger, brighter descriptions; the implementation's are smaller, regular weight and dimmer",
+    "duration: in the reference it sits on the title line at the top-right; in the implementation it is vertically centered",
+    "modal width: the reference is wider (~1085px) than the implementation (~940px)",
+    "background header: the reference has a pill-style active 'Home' and a 'Kids' link; the implementation has plain bold Home text and no Kids link"
+  ],
+  "fixes": [
+    "Reorder each row to number, then thumbnail, then a text block, with the title and duration on one top line",
+    "Replace the season count and native select with plain right-aligned header text",
+    "Show the play overlay only on hover: large and centered on the thumbnail",
+    "Increase type: 17px bold titles, 15px #d2d2d2 descriptions, 26px episode numbers",
+    "Widen the modal to ~1085px and give the highlighted row a rounded #333 fill",
+    "Add the pill-style active Home tab and the Kids link to the header"
+  ],
+  "summary": "The episodes-list modal skeleton matches, but row ordering, header controls, play-icon treatment and type scale differ noticeably from the reference."
+}
+```

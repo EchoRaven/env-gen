@@ -1,0 +1,63 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Both screens are full-bleed video with a dark letterbox, a back arrow at top-left and a single control row along the bottom. Neither has app chrome. The reference's top-right cluster (report flag and Ad countdown badge) is missing. The bottom row is laid out differently: the reference has a few controls on the left, a centred caption and fullscreen on the right. The implementation adds a full-width scrubber above the row, a timestamp at the right, and a four-icon cluster at the right.",
+      "fix": "Add a top-right cluster (flag icon + 'Ad 12' badge). Lay out the bottom row as pause+volume on the left, a centred caption and fullscreen alone on the right. Remove the scrubber row while the ad state is shown."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present in both: back arrow, play/pause, volume and fullscreen. The reference is the transient ad-playing state, and the implementation shows the full normal-playback control set instead. Added controls the reference does not have: 10s rewind/forward, volume slider, progress bar, '0:00 / 0:00' timestamp, subtitles, audio-description, episodes list. The play/pause button shows a play icon where the reference shows pause.",
+      "missing": [
+        "report/flag button (top-right)",
+        "Ad countdown badge with yellow left bar ('Ad 12')",
+        "centred 'X begins after ads' caption in bottom bar"
+      ],
+      "fix": "Render the ad state: add the flag button and the Ad countdown badge at the top right and the centred caption at the bottom. Hide the skip buttons, volume slider, progress bar, timestamp, subtitles, AD and episodes icons. Show the pause icon while the video is playing."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use flat, minimal white-on-video overlays with no surfaces. The reference's icons are larger (about 40px) and more widely spaced, while the implementation's are smaller and denser. The reference also has a dark rounded rectangle behind the Ad badge.",
+      "fix": "Scale the bottom icons up to about 40px with wider spacing. Add the dark, slightly rounded badge container with a yellow 3px left bar."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both have a dark base with white controls. The yellow accent on the Ad badge is missing. The implementation's progress bar adds a grey track and white thumb.",
+      "fix": "Add the yellow (#e5b800-ish) accent bar on the Ad badge. Remove the grey scrubber track in this state."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a white sans-serif. The reference's centred caption (about 22px, regular) and 'Ad 12' label are absent. The only text in the implementation is a small timestamp.",
+      "fix": "Add a centred caption in about 22px regular white sans, and 'Ad 12' in about 18px."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Both use a white line-icon style for back, volume and fullscreen. The reference uses a bold filled pause icon and a corner-bracket fullscreen icon. The implementation shows a play icon and has smaller icons overall. The flag icon is missing.",
+      "fix": "Use the bold pause glyph and a larger corner-bracket fullscreen icon, and add an outline flag icon at the top right."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The implementation has no '<Title> begins after ads' caption and no 'Ad <n>' label.",
+      "fix": "Add the '<Title> begins after ads' caption and an 'Ad <seconds>' badge label."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference's report flag icon and 'Ad 12' countdown badge (with yellow left bar) are missing from the implementation",
+    "bottom centre: the reference's centred 'All American begins after ads' caption is missing from the implementation",
+    "bottom bar: the implementation adds a full-width progress scrubber and a '0:00 / 0:00' timestamp that the reference does not show",
+    "bottom right: the implementation adds subtitles, audio-description and episodes icons; the reference has only fullscreen there",
+    "bottom left: the implementation adds 10s rewind/forward buttons and a volume slider; the reference has only pause and volume",
+    "bottom left: the implementation shows a play icon where the reference shows a pause icon",
+    "icon scale: the implementation's controls are smaller and denser than the reference's large, widely spaced icons"
+  ],
+  "fixes": [
+    "Add an ad-playing state to the player: top-right flag icon plus a dark 'Ad <n>' badge with a yellow left accent bar",
+    "Add a centred bottom caption '<Title> begins after ads' in about 22px white sans",
+    "In the ad state, hide the progress bar, timestamp, skip buttons, volume slider, subtitles, AD and episodes icons",
+    "Bottom row: large pause and volume icons on the left, fullscreen alone on the right, with icons enlarged to about 40px",
+    "Show the pause glyph while the video is playing"
+  ],
+  "summary": "The implementation has the same full-bleed player frame, but it renders the normal-playback controls rather than the reference's ad state. It is missing the flag, the Ad countdown badge and the 'begins after ads' caption, and it adds a scrubber, skip buttons and extra right-side icons."
+}

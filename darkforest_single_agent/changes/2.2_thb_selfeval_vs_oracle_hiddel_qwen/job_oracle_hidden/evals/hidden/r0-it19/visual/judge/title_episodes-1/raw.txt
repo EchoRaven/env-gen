@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Both show a centered dark modal over a dimmed home page, scrolled to an 'Episodes' header and a vertical list of rows separated by hairlines. The row anatomy is different. The reference puts the large episode number on the far left, then the thumbnail, then the text block, with the duration top-right in line with the title. The implementation puts the thumbnail first, the number between the thumbnail and the text, and the duration vertically centered at the far right edge. In the background, the reference hero is an inset card with rounded corners, while the implementation's hero is full-bleed.",
+      "fix": "Reorder each episode row to [number ~40px column, centered] → [thumbnail ~170x96] → [text block], and place the duration on the same baseline as the title at the right end of the text block, not centered at the far right."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "The modal, synopsis, Episodes heading, episode rows, thumbnails, numbers, titles, descriptions, durations and dividers are all present. The reference's top-right of the header is a plain text label. The implementation adds a '4 Seasons' caption and a boxed native <select> dropdown. The implementation shows a play button overlay on every thumbnail, while the reference shows a large centered play circle only on the hovered row. The highlighted row in the reference is a lighter rounded panel, and the implementation has a similar panel.",
+      "missing": [
+        "plain-text label at the top-right of the Episodes header (in place of the boxed select)"
+      ],
+      "fix": "Replace the '4 Seasons' text and native select box with a borderless white text label (a styled custom dropdown if needed). Remove the always-visible small play icons and show a single large centered translucent play circle on hover only."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use a flat dark modal with hairline dividers and a lighter rounded panel for the highlighted row. The implementation is denser: smaller description text with tighter line height. Its native select adds a boxed, bordered control that clashes with the reference's flat look.",
+      "fix": "Increase row padding and description line height (~1.5), and remove the bordered select styling."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both have a near-black #181818 modal over a dimmed page with a similar gray highlighted row. The reference's descriptions are light gray, close to white. The implementation's descriptions are a dimmer gray, and its episode numbers are gray instead of white.",
+      "fix": "Make episode numbers white and descriptions #d2d2d2."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "The reference uses a bold episode title (~17px), an equal-weight white duration, ~15px body descriptions and a large ~26px episode number. The implementation uses regular-weight titles, ~13px small gray descriptions, a smaller gray number and a small gray duration. The 'Episodes' heading matches.",
+      "fix": "Set episode titles to bold ~17px white, descriptions to ~15px with 1.5 line height, numbers to ~26px white regular, and durations to ~16px white."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Thumbnail aspect and crop are similar (16:9 cover, slight radius). The reference's hover play icon is a large centered circle outlined in white. The implementation draws a small filled play badge in the bottom-right corner of every thumbnail.",
+      "fix": "Replace the corner play badges with a large centered outlined play circle that appears on hover only."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The 'Episodes' heading matches. The implementation adds a 'Genres:' line and the '4 Seasons' + 'Season 1' select copy. The reference's header shows only a single label at the right.",
+      "fix": "Show only a single label at the top-right of the Episodes header and drop the extra '4 Seasons' text."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "episode rows: the reference orders the content number → thumbnail → text; the implementation orders it thumbnail → number → text",
+    "episode rows: the reference puts the duration top-right, aligned with the title; the implementation centers it vertically at the far right edge",
+    "episode title typography: the reference uses bold white titles and larger descriptions; the implementation uses regular-weight titles with small, dim gray descriptions",
+    "Episodes header right: the reference has plain text; the implementation shows a '4 Seasons' caption plus a native select box with a border",
+    "thumbnails: the implementation shows a small play badge on every thumbnail; the reference shows a large centered play circle only on the hovered row",
+    "background page: the reference hero is a rounded inset card; the implementation hero is full-bleed"
+  ],
+  "fixes": [
+    "Restructure the episode row as number (left, ~26px white) → thumbnail → text column, with the title (bold) and duration on the same top line",
+    "Increase description size to ~15px light gray and title weight to bold",
+    "Replace the '4 Seasons' text and bordered select with a borderless white text label/dropdown",
+    "Remove the per-thumbnail corner play badges and use a large centered outlined play circle on hover"
+  ],
+  "summary": "The modal and episode list structure match, but the row order (number position), duration placement, title and description styling, and the season control all differ from the reference."
+}

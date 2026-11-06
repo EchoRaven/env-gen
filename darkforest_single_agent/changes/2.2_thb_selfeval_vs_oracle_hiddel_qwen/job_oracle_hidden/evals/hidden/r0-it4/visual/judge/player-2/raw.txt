@@ -1,0 +1,63 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both are full-bleed, chrome-free player canvases. Each has a back arrow at top-left, a control bar along the bottom with transport controls on the left and fullscreen at the far right, and no shared app nav. The reference's top-right cluster (flag icon plus Ad countdown) is missing. The reference's centered caption is missing from the bottom bar, and the implementation adds a full-width scrubber line above the controls that the reference does not have.",
+      "fix": "Add a top-right cluster (flag icon, then the Ad badge) level with the back arrow. Remove the scrubber row and the time readout. Put a centered caption in the bottom control row, between the left controls and the fullscreen button."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present: back arrow, play/pause toggle, volume icon, fullscreen button. Missing: report flag icon (top right), the 'Ad 12' countdown badge with its yellow left bar, and the centered '<Title> begins after ads' caption. Invented controls the reference does not show: progress/scrub bar, rewind-10 and forward-10 buttons, volume slider, '0:00 / 0:00' time readout, subtitles button, audio-description (AD) button, episodes/list button. The implementation shows a play icon (paused); the reference shows pause (playing).",
+      "fix": "Render the ad-break state: flag button and 'Ad N' countdown chip top-right, centered 'X begins after ads' text in the bottom bar. Hide the scrubber, skip buttons, volume slider, time, subtitles, AD and episodes controls during the ad. Show the pause icon while it plays.",
+      "missing": [
+        "report/flag icon (top right)",
+        "Ad countdown badge with yellow accent bar",
+        "centered 'begins after ads' caption in the bottom bar"
+      ]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use flat, minimal overlay controls placed straight on the video with no panels. The reference is sparser and has larger, airier controls. The implementation's bottom bar is crowded with small icons and a thin slider.",
+      "fix": "Enlarge the bottom icons to about 40–48px, space them widely, and remove the clutter so only pause, volume, caption and fullscreen remain."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both have white icons on dark video with a slight dark vignette. The reference's only accent is the yellow/gold vertical bar on the dark Ad chip, which the implementation lacks. The implementation adds a white slider and a grey progress track.",
+      "fix": "Add the Ad chip: a dark translucent background with a 3–4px yellow/gold left bar and white text."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "The reference has a medium-size white sans caption centered at the bottom and a small 'Ad 12' label. The implementation's only text is the small '0:00 / 0:00' time readout at the right, so the caption's size and level in the hierarchy are absent.",
+      "fix": "Add a centered caption at about 20–22px, regular weight, white sans. Add an 'Ad 12' label at about 16px in the chip."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Both use white line icons, with matching back-arrow and fullscreen-corner styles. The reference's pause, speaker and fullscreen icons are noticeably larger and bolder. The reference's flag outline icon is missing, and the implementation adds skip-10, subtitles, AD and list icons.",
+      "fix": "Scale the bottom icons up to the reference size with a heavier stroke. Add the outline flag icon top-right. Drop the extra icons."
+    },
+    "copy": {
+      "score": 0.3,
+      "notes": "The reference's UI copy, '<Title> begins after ads' and 'Ad 12', is absent. The implementation's only copy is the time readout '0:00 / 0:00'.",
+      "fix": "Show '<Title> begins after ads' centered at the bottom and 'Ad <seconds>' in the top-right chip."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference shows a flag (report) icon and an 'Ad 12' countdown chip with a yellow left bar; implementation has nothing there",
+    "bottom center: reference shows the caption '<Title> begins after ads'; implementation has no caption",
+    "bottom bar: implementation adds a full-width progress/scrub bar and a '0:00 / 0:00' time readout that the reference ad state lacks",
+    "bottom left: implementation adds rewind-10 and forward-10 buttons and a volume slider; reference has only pause and the speaker icon",
+    "bottom right: implementation adds subtitles, AD and episodes icons next to fullscreen; reference has only fullscreen",
+    "bottom left: implementation shows the play icon (paused); reference shows pause (playing)",
+    "control scale: reference bottom icons are larger and more widely spaced than the implementation's compact icons"
+  ],
+  "fixes": [
+    "Add the ad-break overlay state: an outline flag icon plus an 'Ad N' chip (dark background, yellow left bar, white text) at the top right, level with the back arrow",
+    "Add the centered white caption '<Title> begins after ads' in the bottom control row",
+    "During the ad, hide the progress bar, time readout, skip ±10 buttons, volume slider, and the subtitles, AD and episodes buttons",
+    "Keep only pause, speaker and fullscreen in the bottom row, enlarged to about 44px with wide spacing",
+    "Autoplay so the toggle shows the pause icon"
+  ],
+  "summary": "The implementation renders a standard paused player, while the reference shows the ad-break state; the ad badge, flag icon and 'begins after ads' caption are missing, and many extra playback controls clutter the bottom bar."
+}

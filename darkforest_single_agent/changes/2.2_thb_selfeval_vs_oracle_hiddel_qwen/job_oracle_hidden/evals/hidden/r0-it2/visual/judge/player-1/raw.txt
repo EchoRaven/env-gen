@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed dark video players with a back arrow at top-left, a control row along the bottom edge, and fullscreen at bottom-right. The reference shows the ad-break state: the top-right holds a flag icon and an 'Ad 12' countdown chip, and the bottom row has only pause and volume on the left, a centered caption, and fullscreen on the right. The implementation shows the normal playback state instead. It has nothing at top-right, adds a full-width scrubber above the controls, and fills the bottom-right with four icons.",
+      "fix": "Render the ad-break overlay: put the flag icon and the 'Ad N' chip at top-right (~1730px and ~1800–1890px, y≈55). Bottom row: pause and volume at left, a centered caption, fullscreen at right. Hide the scrubber and the extra right-side icons."
+    },
+    "components": {
+      "score": 0.35,
+      "notes": "Present: back arrow, play/pause toggle, volume icon, fullscreen. Missing: the report flag icon, the 'Ad 12' countdown chip with its yellow left accent bar, and the centered 'begins after ads' caption. Invented controls the reference does not show: a progress scrubber, a '0:00 / 0:00' time readout, 10-second rewind and forward buttons, a volume slider, and subtitles, audio-description and episodes icons.",
+      "fix": "Add a flag (report) icon button and an 'Ad {seconds}' chip (dark translucent box, yellow vertical bar on its left edge) at top-right, plus a centered '{Title} begins after ads' text in the bottom row. During ads, remove the scrubber, time readout, skip ±10 buttons, volume slider, subtitles, AD and episodes icons.",
+      "missing": ["report/flag icon (top-right)", "'Ad 12' countdown chip with yellow accent bar", "centered '<title> begins after ads' caption"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are minimal flat overlays on full-bleed video, with white glyphs and no cards or shadows. The reference is sparser and its controls are larger. The implementation looks busier because of the scrubber and the dense icon cluster.",
+      "fix": "Make the overlay sparser and scale the controls up: bottom icons ~40–50px tall, back arrow ~40px."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a black or dark-video base with white icons. The reference has a yellow/gold accent bar on the Ad chip and a dark translucent chip background; the implementation has no accent anywhere. Its scrubber is grey on dark.",
+      "fix": "Add the Ad chip with a near-black translucent background and a ~4px yellow (#E5B13A-ish) left bar."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a clean sans. The reference's main text is the medium-size centered white caption (~22px) and the small 'Ad 12' label. The implementation's only text is a tiny '0:00 / 0:00' time readout at the right.",
+      "fix": "Set the centered ad caption in white, regular weight, ~22px sans. Set 'Ad 12' at ~18px. Drop the time readout."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Both use white line/filled icons. The reference has a large bold pause glyph, a volume icon with sound waves, a corner-bracket fullscreen icon and a flag outline. The implementation shows a play triangle (paused state), a muted volume icon, extra skip, subtitles, AD and list icons, and a smaller back arrow and controls.",
+      "fix": "Make the back arrow, pause, volume and fullscreen icons ~1.3–1.5× larger. Show the pause glyph while playing. Add the outlined flag icon."
+    },
+    "copy": {
+      "score": 0.3,
+      "notes": "The reference copy is 'Ad 12' and '<Title> begins after ads'. The implementation has neither; its only text is '0:00 / 0:00'.",
+      "fix": "Add the 'Ad {n}' label and the '{Title} begins after ads' caption."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference's flag icon and 'Ad 12' chip with yellow accent bar are absent; the implementation leaves the top-right empty",
+    "bottom-center: the reference's centered 'begins after ads' caption is absent",
+    "bottom: the implementation adds a full-width progress scrubber and a '0:00 / 0:00' readout that the reference (ad state) does not show",
+    "bottom-left: the implementation adds 10-second rewind and forward buttons and a volume slider; the reference has only pause and volume",
+    "bottom-right: the implementation adds subtitles, AD and episodes icons; the reference has only fullscreen",
+    "icon scale: the implementation's back arrow and control icons are noticeably smaller than the reference's",
+    "bottom-left: the implementation shows a play glyph; the reference shows pause (playing state)"
+  ],
+  "fixes": [
+    "Implement an ad-break overlay state for /watch.",
+    "Top-right: add an outline flag (report) icon and an 'Ad {countdown}' chip on a dark background with a yellow left bar.",
+    "Bottom row: keep only pause/play and volume at left, add the centered '{Title} begins after ads' caption (white, ~22px), and fullscreen at right.",
+    "During ads, hide the scrubber, time readout, skip ±10 buttons, volume slider, subtitles, AD and episodes icons.",
+    "Make the back arrow and the bottom icons ~1.4× larger to match the reference."
+  ],
+  "summary": "The implementation is a generic full-controls video player, but the reference is the sparse ad-break state: the Ad countdown chip, flag icon and 'begins after ads' caption are missing, and several controls the reference doesn't have were added."
+}
+```

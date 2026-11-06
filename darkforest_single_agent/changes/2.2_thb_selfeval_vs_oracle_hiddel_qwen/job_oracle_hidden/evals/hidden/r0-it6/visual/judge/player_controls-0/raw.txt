@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both use a full-bleed player with no app chrome: back arrow top-left, a full-width scrubber near the bottom with the time on the right, and a control row below it. The implementation has no top-right element where the reference has one. Its bottom row has no centered title block, so the left and right groups sit far apart with nothing between them. The control row is shorter and tighter than the reference's.",
+      "fix": "Add a top-right icon slot about 56px from the edges. Put a centered title cluster in the bottom row between the left and right control groups. Raise the control row to about 70px with icons centered vertically."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back, play/pause, skip back 10, skip forward 10, volume, progress bar, time, subtitles, fullscreen. Missing: report/flag icon top-right, red scrubber thumb, buffered segment on the track, centered episode title, next-episode button. The episodes icon is shown as a hamburger list. Invented: inline volume slider and an AD (audio description) button.",
+      "missing": ["top-right report/flag icon", "red progress fill with round red scrubber thumb", "buffered segment on progress track", "centered episode title ('Show E# Episode title')", "next-episode button (play-to-bar icon)", "episodes button (stacked-cards icon)"],
+      "fix": "Add a flag icon top-right. Give the progress bar a red fill, a round red thumb and a lighter buffered segment. Add a centered title label. Add a next-episode button and a stacked-cards episodes button before subtitles. Remove the inline volume slider and the AD button."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are flat and minimal, with white icons on dark and no panels. The reference uses large, bold controls spread out across the row. The implementation's controls are small and dense. Its track is a hairline with no thumb, where the reference has a thicker track with a pronounced thumb.",
+      "fix": "Scale control icons to about 44–50px with about 40px gaps. Make the progress track about 4px with a 16px round thumb."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both are dark with white controls. The reference's one accent, the red progress fill and thumb, is missing; the implementation's progress is all grey. The reference's buffered segment is light grey on a darker track, and the implementation has no such distinction.",
+      "fix": "Color the elapsed progress and thumb Netflix red (#E50914). Make the buffered segment light grey (#BBB) and the remaining track darker grey (#666)."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "The time is in a small sans in both. The bold-plus-regular title lockup (bold show name, regular 'E1 Episode title') is absent. The time label reads '0:00 / 0:00', not a single remaining-time value.",
+      "fix": "Add a centered title around 20px: show name semibold, then 'E1' and the episode title in regular weight. Show only the remaining time (e.g. '32:57') at about 16px."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "The icons are white line style in both. The reference uses large icons: a bold pause, circular arrows with a '10' label, a speaker with waves, play-to-bar for next episode, stacked cards for episodes, a speech bubble for subtitles and a corner-bracket fullscreen icon. The implementation's icons are much smaller, and the 10-second icons are tiny. It uses a hamburger for episodes, adds an AD glyph, has no flag and no next-episode icon, and shows the volume as muted.",
+      "fix": "Use large outlined icons at about 48px: circular-arrow skip icons with a legible '10', a stacked-cards episodes icon, a play-to-bar next icon, and a flag top-right."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "There is very little copy on this screen. The title label is missing. The time format differs: elapsed / total in the implementation, remaining only in the reference.",
+      "fix": "Render '<Show> E<n>  <Episode title>' centered in the bottom bar and show the remaining time only."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "bottom bar center: the reference has a centered episode title lockup (bold show name + 'E1' + episode title); the implementation has nothing there",
+    "progress bar: the reference has a red elapsed fill, a round red scrubber thumb and a lighter buffered segment; the implementation has a uniform thin grey hairline with no thumb",
+    "bottom-right controls: the reference has next-episode (play-to-bar) and episodes (stacked cards) buttons; the implementation has no next-episode button, uses a hamburger list icon, and adds an AD button",
+    "top-right: the reference shows a flag/report icon; the implementation has none",
+    "bottom-left: the implementation adds an inline volume slider the reference lacks; the volume icon shows a muted state",
+    "control sizing: the reference icons are large (~48px) with wide spacing; the implementation's are small (~24–30px) and cramped, with tiny skip-10 icons",
+    "time label: the reference shows remaining time ('32:57'); the implementation shows '0:00 / 0:00'"
+  ],
+  "fixes": [
+    "Add a centered title label in the bottom control row: show name semibold, then 'E# Episode title' in regular weight, white, about 20px",
+    "Restyle the progress bar: about 4px track, red (#E50914) elapsed fill, 16px round red thumb, light-grey buffered segment over a darker remaining track",
+    "Add a next-episode button (play-to-bar icon) and replace the hamburger with a stacked-cards episodes icon, ordered next, episodes, subtitles, fullscreen",
+    "Remove the inline volume slider and the AD button",
+    "Add a flag/report icon top-right, mirroring the back arrow",
+    "Enlarge all control icons to about 48px with about 40px spacing, using circular-arrow skip icons with a legible '10'",
+    "Show the remaining time only, right of the progress bar"
+  ],
+  "summary": "The player shell matches (back arrow, scrubber, bottom control row, white line icons), but the centered title, red scrubber, next-episode and episodes buttons, and flag icon are missing. The implementation adds a volume slider and an AD button, and its icons are too small."
+}
+```

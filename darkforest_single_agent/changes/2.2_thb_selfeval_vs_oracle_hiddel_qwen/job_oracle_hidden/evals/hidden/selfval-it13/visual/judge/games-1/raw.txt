@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both have a transparent top nav bar with the logo on the left, links, and icons on the right, followed by horizontal rows of landscape cards. In the reference, a full-bleed hero image fills about 70% of the viewport, with a bottom-left lockup, metadata and buttons, and the first row starts at about y=850. The implementation has no hero image. Instead it shows a page title 'Games' and a centered Netflix Games logo on a dark red radial glow, which leaves a large empty band in the middle of the page.",
+      "fix": "Replace the title + logo block with a full-bleed hero image (~780px tall) with a bottom/left dark gradient. Put the title lockup, metadata row and buttons bottom-left at x≈53, and the mute and maturity badge bottom-right. Start the 'Party Games' row directly below the hero."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Nav links (7), search, bell, avatar with caret, and the 'Party Games' row with 5+ cards and a peeking 6th card all match. The rest of the hero is missing: artwork, title-logo lockup, metadata row, Play Game and More Info buttons, mute button, and the maturity/'ALL' rating badge with a left bar. The pill highlight on the active 'Games' link, the Kids profile entry and the row pagination indicator are also missing. Invented elements: the 'Games' page heading and the centered N Games brand lockup.",
+      "missing": ["hero background artwork", "hero title-logo lockup", "hero metadata row (Game • Genre • Players • Duration)", "Play Game button", "More Info button", "mute toggle", "maturity rating badge", "active-tab pill highlight", "Kids profile link", "row pagination indicator"],
+      "fix": "Add the hero with lockup, a dot-separated metadata row, a white 'Play Game' button, a translucent grey 'More Info' button with an info icon, a circular outlined mute button and a right-edge rating badge. Give the active nav item a translucent grey pill. Add 'Kids' with its icon before the avatar. Add a pagination dash at the top-right of the row."
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "The flat, dark, cinematic Netflix look matches, and so do the slightly rounded card corners. The reference relies on immersive full-bleed imagery. The implementation instead uses an empty radial red glow with a brand logo, which feels like a placeholder and not the reference's media-driven treatment.",
+      "fix": "Remove the radial red glow. Use full-bleed artwork with a dark vignette and a bottom fade into the #141414 page background."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "The dark #141414 base, white text and red Netflix wordmark all match. The implementation adds a red radial gradient that the reference doesn't have. The reference's buttons (solid white and translucent grey) and the grey active-pill are absent.",
+      "fix": "Remove the red glow. Add a white primary button with black text, a rgba(109,109,110,0.7) secondary button, and a translucent grey active-nav pill."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use sans-serif type. The implementation's nav text is smaller (~13px vs ~17px) and the gaps between links are tighter. The active link is bold in both. The row title is smaller (~18px vs ~26px). The large condensed 'Games' display text is invented.",
+      "fix": "Set nav links to ~17px with ~40px gaps, the 'Party Games' heading to ~26px medium, the hero metadata to ~18px, and the button labels to ~18px semibold."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The search and bell line icons, the square avatar with a caret, and the 16:9 rounded cards match. The implementation lacks the Kids icon, the info icon on the button and the mute icon. The large N-logo tile is an invented graphic.",
+      "fix": "Add the Kids profile icon, an outlined circular info icon in More Info and a speaker-mute icon in a circular outlined button. Remove the N-logo tile."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "The nav labels and the 'Party Games' heading match. Missing labels: 'Play Game', 'More Info', 'Kids', and the 'ALL' rating text. The 'Games' page heading and 'More Games' row label are extra or not visible in the reference.",
+      "fix": "Add the 'Play Game', 'More Info' and 'Kids' labels and a rating badge, and remove the standalone 'Games' heading."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "hero area: the reference has full-bleed game artwork with a title lockup, metadata and buttons bottom-left; the implementation shows a 'Games' heading and a centered N Games logo on an empty red glow",
+    "hero bottom-left: the implementation has no 'Play Game' (white) or 'More Info' (grey, info icon) buttons",
+    "hero bottom-left: the dot-separated metadata row (Game • Sports • players • minutes) is missing",
+    "hero bottom-right: the mute button and the 'ALL' maturity badge with a left bar are missing",
+    "nav: the reference's active 'Games' item has a translucent grey pill; the implementation only bolds it",
+    "nav right: the 'Kids' entry with its icon is missing before the avatar",
+    "nav: link text is smaller and more tightly spaced than in the reference",
+    "Party Games row: the heading is smaller, and the pagination dash indicator at top-right is missing",
+    "center of page: a large empty dark band appears between the logo and the first row"
+  ],
+  "fixes": [
+    "Replace the 'Games' heading and centered logo block with a full-bleed hero image (~780px) with left and bottom dark gradients",
+    "Add a hero title-logo lockup, a metadata row, a white 'Play Game' button and a grey 'More Info' button with an info icon, bottom-left at x≈53",
+    "Add a circular mute button and an 'ALL' rating badge with a left white bar at the bottom-right of the hero",
+    "Give the active nav link a translucent grey pill, and enlarge nav text to ~17px with wider spacing",
+    "Add the 'Kids' icon and label before the avatar",
+    "Place the 'Party Games' row directly under the hero, enlarge its heading to ~26px, and add a top-right pagination indicator"
+  ],
+  "summary": "The nav and card-row skeleton match, but the defining hero (artwork, title lockup, metadata, Play/More Info buttons, mute and rating badge) is replaced by a placeholder Netflix Games logo on a red glow."
+}
+```

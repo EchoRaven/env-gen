@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both are full-bleed black player screens with a back arrow at top-left, a full-width scrubber near the bottom and a control row below it, split into left and right groups. Differences: the implementation puts the title block at top-center, but the reference has the title inline in the bottom control row, centered. The reference shows the remaining time at the right end of the scrubber; the implementation puts elapsed/total time in the right control group. The reference has a flag (report) icon at top-right, and the implementation has nothing there.",
+      "fix": "Move the title out of the top bar into the center of the bottom control row. Put the time readout to the right of the scrubber on the same line. Add a flag icon at top-right."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present in both: back, pause, back 10, forward 10, volume, scrubber, next episode, episodes, subtitles and fullscreen. The reference has a flag/report icon at top-right; the implementation lacks it. The implementation adds things the reference doesn't show: an inline volume slider, an AD (audio description) button, a 'Next' text label with a green bar, and an 'Episodes' text dropdown. The reference's scrubber has a buffered segment and chapter markers; the implementation's does not.",
+      "missing": ["flag/report-problem icon (top-right)", "remaining-time label at the end of the scrubber", "buffered-progress segment on the scrubber", "centered inline title in the control row"],
+      "fix": "Add the flag icon. Remove the inline volume slider, the AD button and the green 'Next' bar. Replace the 'Episodes ▾' text with an icon-only stacked-cards button and 'Next' with an icon-only next-episode icon. Give the scrubber a lighter buffered segment."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are minimal, flat, black, and use no chrome surfaces. The reference's controls are larger (~50px icons) with generous spacing. The implementation's controls are smaller and more compact, and mix text buttons with icons.",
+      "fix": "Scale control icons to ~48–52px and space them about 90px apart. Use icons only."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both have a black background, white icons, a red progress fill and a red thumb. The implementation adds a green/teal accent on 'Next' that isn't in the reference. Its scrubber track is flat dark gray, while the reference uses a light gray buffered segment over a darker gray track.",
+      "fix": "Remove the green accent from 'Next'. Show a light gray buffered segment between the red played portion and the darker track."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a white sans-serif. The reference has one inline title line: a bold show name, then a regular episode label and episode title. The implementation uses a two-line centered header (title, then a smaller gray 'S1E1 · ...' line) and text labels such as '-10s' and '+10s'.",
+      "fix": "Render the title as one line in the bottom bar: bold show name, then a regular 'E1' and the episode title, ~22px."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "The back arrow and the subtitles and fullscreen icons are close. The reference uses circular-arrow replay/forward icons with '10' inside; the implementation uses '-10s' and '+10s' text. The reference's pause icon is two filled bars; the implementation's is outlined. The reference's volume icon has sound waves; the implementation's is a muted speaker. The reference's episodes icon is stacked cards, and its next icon is a play-to-bar glyph. The implementation has no flag icon.",
+      "fix": "Use circular-arrow seek icons with '10' inside, a filled two-bar pause icon, a speaker-with-waves volume icon, a stacked-cards episodes icon, a play-to-bar next icon and a flag outline icon."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The reference's control row has no text labels except the title and the time. The implementation adds 'Episodes', 'Next', '-10s', '+10s' and '0:00 / 0:00'. The reference shows a single remaining-time value.",
+      "fix": "Drop the text labels on the controls. Show only the remaining time (e.g. '32:57') at the end of the scrubber."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Title placement: the implementation puts a two-line title block at top-center; the reference shows one inline title centered in the bottom control row.",
+    "Top-right: the reference has a flag (report) icon; the implementation leaves this area empty.",
+    "Seek controls: the implementation uses '-10s'/'+10s' text; the reference uses circular-arrow icons with '10' inside.",
+    "Right control group: the implementation uses an 'Episodes ▾' text dropdown, a 'Next' label with a green bar, and an extra AD icon; the reference uses an icon-only next-episode button, an episodes stacked-cards icon, subtitles and fullscreen.",
+    "Volume: the implementation adds an inline red-thumb volume slider beside a muted speaker; the reference shows only a speaker-with-waves icon.",
+    "Time readout: the implementation shows '0:00 / 0:00' in the right control group; the reference shows the remaining time at the right end of the scrubber.",
+    "Scrubber: the implementation lacks the reference's light gray buffered segment and chapter markers.",
+    "Control scale: the implementation's icons are smaller and tighter than the reference's large icons (~50px)."
+  ],
+  "fixes": [
+    "Remove the top-center title block and render '<Show> E<n> <Episode title>' (show name bold) centered in the bottom control row.",
+    "Add a flag outline icon at top-right, aligned with the back arrow.",
+    "Replace the '-10s'/'+10s' text with circular-arrow replay/forward icons with '10' inside.",
+    "Change the pause icon to filled bars and the volume icon to a speaker with waves, and remove the inline volume slider.",
+    "Make the right group icon-only, in this order: next-episode (play-to-bar), episodes (stacked cards), subtitles, fullscreen. Remove the AD button and the green 'Next' bar.",
+    "Move the time readout to the right end of the scrubber as remaining time only.",
+    "Add a light gray buffered segment to the scrubber track.",
+    "Enlarge control icons to ~50px and widen the gaps between them."
+  ],
+  "summary": "The implementation has the same black, red-accent player skeleton, but the title sits at the top instead of the bottom row, there are text controls where the reference uses icons, there are extra controls (volume slider, AD, green Next), and the flag icon and end-of-bar remaining time are missing."
+}
+```

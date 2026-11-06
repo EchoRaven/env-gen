@@ -1,0 +1,77 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both screens use the same frame: a full-width dark top nav with the logo, nav links on the left and utilities on the right, a 'My List' heading at the same left gutter (~67px), and a left-aligned row of tiles below it with the rest of the page empty. The differences are in the tiles. Reference tiles are 16:9 (~294x165), sit lower (top ~303px) and leave room for the expanded hover card, which rises above the row and overlaps it. Implementation tiles are almost square (~291x258), start right under the heading at ~170px, and have caption text underneath. The implementation nav is also more compact (shorter, links closer together).",
+      "fix": "Make tiles 16:9 (~294x165) with ~8px gaps and no caption block. On hover, open a ~440px-wide expanded card centred on the tile and scaled above it. Make the nav taller (~86px) with ~40px gaps between links."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present: logo, 7 nav links, search icon, bell icon, avatar with caret, page title, and a list of title tiles. Missing from the reference state: the hover preview card (16:9 preview image with the N badge and title lockup, mute toggle, white circular play button, a rating pill with not-for-me / I like this / love-this thumbs and an 'I like this' tooltip, a circular 'more info' chevron, a metadata row with an outlined maturity badge, runtime and an outlined HD badge, and genre tags separated by bullets). Also missing: the 'Kids' profile link with its icon in the header, the red 'New Season' badge on a tile, and the pill highlight on the active nav item. The implementation adds title and 'Movie · 2026' captions under each tile, which the reference does not have.",
+      "fix": "Build the hover card (preview, play, rating pill with tooltip, chevron, mute, metadata row, genre tags). Add a 'Kids' link with its icon before the avatar. Add a red 'New Season' badge overlay to tiles. Give the active nav item a pill highlight. Remove the captions under tiles.",
+      "missing": [
+        "hover/expanded preview card",
+        "white circular play button",
+        "thumbs rating pill (dislike / like / love)",
+        "'I like this' tooltip",
+        "circular more-info chevron button",
+        "mute toggle on preview",
+        "maturity rating badge + runtime + HD badge row",
+        "genre tags row with bullet separators",
+        "Kids profile link with icon",
+        "'New Season' red badge on tile",
+        "active nav pill highlight"
+      ]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use a flat, minimal dark streaming style with slightly rounded tiles. The reference uses heavy pill shapes and circles for its controls (the active nav pill, the rating pill, the circular buttons) and an elevated card with a soft shadow. None of that depth appears in the implementation. The caption text under the tiles makes the implementation look more like a catalogue grid.",
+      "fix": "Use a pill radius for the active nav item and the rating group, and give the hover card a rounded ~6px elevated surface (#181818) with a soft shadow. Drop the captions under tiles."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both have a near-black page (#141414), white text and the red Netflix logo. Missing: the grey (#333/#444) active nav pill, the red badge accent, and the #181818 surface of the hover card. The implementation avatar is a purple gradient tile with an initial; the reference avatar is a blue smiley tile.",
+      "fix": "Use a #404040 fill for the active nav pill. Use #181818 for the hover-card surface with grey outlined circular buttons. Use the red #E50914 for the 'New Season' badge."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif font. Reference nav links are larger (~17px), regular weight, with the active item bold. Implementation nav links are smaller (~13px). The reference 'My List' heading is larger (~36px) and regular weight; the implementation heading is ~28px and semibold. The implementation also adds small grey caption text that the reference does not have.",
+      "fix": "Set nav links to ~17px regular with a bold active item, and the page title to ~36px regular weight. Remove the tile captions. In the hover card, use ~17px text for metadata and genre tags."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Search and bell are outline icons in both, but the implementation's are smaller. The reference tiles are 16:9 landscape crops with the title lockup baked into the artwork; the implementation tiles are tall, near-square poster crops. Missing: the Kids icon, the blue smiley avatar style, the thumbs and play/chevron/mute icons, and the N badge on the preview.",
+      "fix": "Crop artwork to 16:9 landscape (object-fit: cover). Make the search and bell icons ~26px. Add the Kids icon and outline thumbs, chevron and mute icons inside circular outlined buttons."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels and the 'My List' heading match exactly. Missing: the 'Kids' label, the 'I like this' tooltip text and the 'New Season' badge text. The implementation adds 'Movie · 2026' caption copy that the reference does not have.",
+      "fix": "Add the 'Kids' label, the 'I like this' tooltip and the 'New Season' badge text. Remove the 'Movie · YEAR' captions."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "tile row: the reference shows a hovered tile expanded into a preview card (image, play button, rating pill with 'I like this' tooltip, chevron, mute, metadata and genre tags); the implementation has no hover card",
+    "tiles: the reference uses 16:9 landscape tiles (~294x165); the implementation uses tall near-square poster tiles (~291x258)",
+    "under tiles: the implementation adds title and 'Movie · 2026' captions; the reference tiles have no text below them",
+    "header nav: the reference highlights the active 'My List' with a grey pill; the implementation only bolds it",
+    "header nav: the reference links are larger (~17px) and more widely spaced; the implementation's are small and tightly packed",
+    "header right: the reference has a 'Kids' link with its icon before the avatar; the implementation has none",
+    "page title: the reference 'My List' is larger and regular weight; the implementation's is smaller and semibold",
+    "tile badge: the reference shows a red 'New Season' badge on a tile; the implementation has no badge treatment",
+    "row position: the reference row sits lower (~303px top) under the heading; the implementation row starts right below the title"
+  ],
+  "fixes": [
+    "Make My List tiles 16:9 (~294x165), 8px gap, rounded 4px, with no caption text underneath",
+    "Add a hover card: scale to ~440px wide and centre over the tile, 16:9 preview with an N badge and a mute button, then a row with a white circular play button, a pill holding dislike/like/love thumbs with an 'I like this' tooltip, and a right-aligned circular chevron; below that, an outlined maturity badge + runtime + outlined HD badge, then genre tags separated by bullets; #181818 surface with a soft shadow",
+    "Highlight the active nav item with a grey rounded pill (#404040), bold white text",
+    "Enlarge nav links to ~17px with ~40px spacing; enlarge the search and bell icons",
+    "Add a 'Kids' link with its icon to the left of the profile avatar",
+    "Set the 'My List' title to ~36px regular weight",
+    "Support a red 'New Season' badge overlay at the bottom of tiles"
+  ],
+  "summary": "The nav, title and dark theme are a close match, but the implementation uses tall captioned poster tiles instead of 16:9 tiles and is missing the expanded hover preview card, the active nav pill, the Kids link and the tile badges."
+}
+```

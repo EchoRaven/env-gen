@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both use a full-bleed player with a back arrow top-left, a full-width progress bar near the bottom, the time on the right of the bar, and one control row underneath with left and right clusters. The implementation has no centered title in the middle of the control row and nothing in the top-right corner. Its whole control band sits slightly lower and is more compressed: the bar is at about y=1038 versus y=968, and the icons are much smaller.",
+      "fix": "Raise the scrubber to about 88% of the height, with the control row about 70px below it. Put a centered title block in the middle of the control row and a top-right action icon opposite the back arrow."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, play/pause, back 10s, forward 10s, volume, subtitles/audio, fullscreen, progress bar and time label. Missing: the top-right report/flag icon, the centered 'Title E# Episode' label, the next-episode button and the episodes-list (stacked cards) button. The scrubber has no red played segment, no red thumb, no light-grey buffered segment and no chapter markers. Invented: a horizontal volume slider, an 'AD' audio-description icon and a hamburger/list icon that the reference does not show.",
+      "missing": [
+        "top-right flag/report icon",
+        "centered title + episode label in control row",
+        "next episode button",
+        "episodes (stacked cards) button",
+        "red played progress + red scrubber thumb",
+        "buffered segment on progress bar"
+      ],
+      "fix": "Add a flag icon top-right and a centered title label. In the right cluster, add next-episode (play-with-bar) and episodes (stacked cards) buttons before subtitles and fullscreen. Remove the inline volume slider, the AD icon and the list icon. Give the progress bar a red fill, a red circular thumb and a grey buffered track."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both are flat, minimal player chrome with no panels. The reference has large, bold controls (about 50px) with generous spacing. The implementation's controls are small (about 24px) and tightly packed, which gives a utilitarian HTML5-player feel.",
+      "fix": "Scale the control icons to about 48–52px and space them about 90px apart."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Both use white icons on a dark background. The reference's signature red accent on the progress fill and thumb is absent: the implementation's bar is plain grey with a white thumb on the volume slider.",
+      "fix": "Use Netflix red (#E50914) for the played portion and the thumb. Use light grey for the buffered portion and darker grey for the remaining track."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "The reference has a centered title with a bold show name, regular-weight episode text and a small white remaining-time label. The implementation has only a small grey '0:00 / 0:00' label and no title text.",
+      "fix": "Add a centered title in a sans font at about 22px, with a bold show name followed by regular 'E1  Episode title'. Show a single remaining-time value (for example '32:57') in white at about 16px."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "The icon sets are similar outline styles: back-10 and forward-10 circular arrows, a speaker, a subtitle bubble and fullscreen corners. The implementation's icons are much smaller and thinner. It shows a muted-speaker variant and adds AD and list glyphs. The play glyph is filled, and the reference shows a bold pause glyph, but that is only a state difference. The reference's flag, next-episode and stacked-episodes icons are absent.",
+      "fix": "Use bold, larger outline icons with about 3px strokes. Add the flag, next-episode and stacked-episodes icons, and drop the AD and list icons."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The reference shows the remaining time only and a title label. The implementation shows an 'elapsed / total' time format and no title copy.",
+      "fix": "Show the remaining duration only, and add the 'Show  E#  Episode' label."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Bottom control row center: the reference's centered 'Title E1 Episode' label is absent from the implementation.",
+    "Bottom-right cluster: the reference's next-episode and episodes (stacked cards) buttons are missing. The implementation adds an AD icon and a list icon instead.",
+    "Progress bar: the reference has a red played fill, a red circular thumb, a light-grey buffered segment and markers. The implementation's bar is a plain thin grey line.",
+    "Top-right: the reference's flag/report icon is missing.",
+    "Bottom-left: the implementation adds an inline horizontal volume slider that the reference does not have.",
+    "Control icons are about half the reference size and more tightly spaced.",
+    "Time label: the implementation shows '0:00 / 0:00' elapsed/total. The reference shows a single remaining time."
+  ],
+  "fixes": [
+    "Add a centered title label in the control row: bold show name followed by regular 'E# Episode name'.",
+    "Right cluster order: next-episode, episodes (stacked cards), subtitles, fullscreen. Remove the AD and list icons.",
+    "Add a flag/report icon in the top-right corner, mirroring the back arrow.",
+    "Style the progress bar: red (#E50914) played fill, red round thumb, light-grey buffered segment, darker-grey track. Show a single remaining-time value on the right.",
+    "Remove the inline volume slider and keep only the speaker icon.",
+    "Scale all control icons to about 50px with bolder strokes and wider spacing, and move the scrubber and control row up slightly."
+  ],
+  "summary": "The implementation has the same full-bleed player skeleton with a back arrow and a bottom control row, but icons are undersized, the centered title, next-episode, episodes and flag controls are missing, the red progress styling is absent, and it adds a volume slider, an AD icon and a list icon."
+}

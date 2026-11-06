@@ -1,0 +1,116 @@
+{
+ "checks": [
+  {
+   "name": "landing renders with Sign In and an email field",
+   "ok": true,
+   "detail": "join now\nsign in\nunlimited movies, tv shows, and more\n\nwatch anywhere. cancel an"
+  },
+  {
+   "name": "Sign In leads to /login",
+   "ok": true,
+   "detail": "http://127.0.0.1:22544/login"
+  },
+  {
+   "name": "signing in leaves the login page",
+   "ok": true,
+   "detail": "http://127.0.0.1:22544/profiles"
+  },
+  {
+   "name": "the profile picker shows the account's profiles",
+   "ok": true,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "browse home has a hero billboard (>=60% wide)",
+   "ok": false,
+   "detail": "0"
+  },
+  {
+   "name": "browse home shows poster rails (>=10 images loaded)",
+   "ok": false,
+   "detail": "0"
+  },
+  {
+   "name": "nav 'Home' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "nav 'Shows' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "nav 'Movies' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "nav 'Games' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "nav 'New & Popular' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "nav 'My List' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "nav 'Browse by Languages' opens its screen",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "clicking a poster opens the title detail with Play",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "+ My List from the detail shows up on My List",
+   "ok": false,
+   "detail": "0 -> 0"
+  },
+  {
+   "name": "another profile's My List does not show it",
+   "ok": false,
+   "detail": "0 vs 0"
+  },
+  {
+   "name": "search finds a title by name",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse"
+  },
+  {
+   "name": "Play opens /watch/:id with a loadable video",
+   "ok": false,
+   "detail": "http://127.0.0.1:22544/browse None"
+  },
+  {
+   "name": "the player's back returns to the browse page",
+   "ok": true,
+   "detail": "http://127.0.0.1:22544/profiles"
+  },
+  {
+   "name": "the account menu offers Sign out",
+   "ok": false,
+   "detail": ""
+  },
+  {
+   "name": "no broken images on visited pages",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "name": "no console errors during the walk",
+   "ok": false,
+   "detail": "['ReferenceError: seasons is not defined\\n    at Om (http://127.0.0.1:22544/assets/index-vCmSLTZy.js:67:41780)\\n    at oo (http://127.0.0.1:22544/assets/index-vCmSLTZy.js:38:16961)\\n    at ad (http://127.0', 'ReferenceError: seasons is not defined\\n    at Om (http://127.0.0.1:22544/assets/index-vCmS"
+  }
+ ],
+ "passed": 6,
+ "total": 22
+}

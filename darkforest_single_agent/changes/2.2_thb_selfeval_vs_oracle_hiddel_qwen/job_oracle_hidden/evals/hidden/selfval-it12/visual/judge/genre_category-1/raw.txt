@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both have a transparent top nav over a full-bleed hero, the logo and links on the left, the icons on the right, a breadcrumb under the nav, a hero lockup, a description and CTAs on the left, and a card row below. The differences: the reference ends the hero with a titled horizontal carousel ('Your Next Watch') that bleeds off the right edge, with the next row heading peeking in. The implementation shows an untitled multi-row wrapping grid with captions under each card. The reference also has a right-edge maturity rating rail (mute circle + 'TV-14') and row pagination ticks, and the implementation has neither.",
+      "fix": "Replace the wrapping grid with titled horizontal carousel rows (heading above, cards overflow the right edge, pagination ticks top-right, next row heading visible below). Add a mute button and a maturity-rating tab flush to the right edge at CTA height."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "These are present: the nav links (same 7), search, bell, profile avatar with caret, breadcrumb, hero title lockup, synopsis, Play and More Info buttons, cards, and TOP badges. These are missing: the active pill highlight on the current nav section, the Kids link with its icon, the large page-title breadcrumb, the mute/replay circle button, the maturity rating badge, the row heading, row pagination indicators, and the bottom-center red status labels ('Recently Added'/'New Season'/'Live Now'). The implementation also adds a title and 'Movie · 2026' caption under each card, which the reference does not have.",
+      "missing": ["active nav pill highlight", "Kids profile link", "large genre page title in breadcrumb", "mute/replay circle button", "maturity rating badge (TV-14 tab)", "row section heading ('Your Next Watch')", "row pagination indicator", "bottom-center red status labels on cards"],
+      "fix": "Add a grey pill behind the active nav item, a Kids link left of the avatar, a mute button and maturity tab on the hero's right, a row heading above the cards, and red status labels centred on the card bottom edge. Remove the per-card title and metadata captions."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same cinematic dark full-bleed hero with a bottom fade, slightly rounded rectangular buttons, and edge-to-edge cards with small gaps. The reference's nav is larger and airier. The implementation's grid with captions is denser and more catalogue-like.",
+      "fix": "Make the nav items larger with more spacing. Drop the card captions so the cards sit as pure imagery in one row."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both are dark with a near-black page base, a red brand logo, red badges, a white Play button and a translucent grey More Info button. The reference has a neutral grey active-nav pill, which the implementation lacks. The implementation's avatar is purple, while the reference's is blue; this is minor.",
+      "fix": "Add a translucent grey (#ffffff33) pill for the active nav item."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans UI font and a condensed red display lockup in the hero. The reference has nav labels around 17px with the active item bold, a large ~44px white 'Sports TV Shows' title with a grey 'TV Shows >' crumb, a ~22px synopsis and a ~22px row heading. The implementation uses a ~13px nav, a small ~16px 'Browse / Action' breadcrumb with no large page title, and a ~14px synopsis with smaller CTA text.",
+      "fix": "Raise the nav to ~17px and bold the active item. Render the breadcrumb as a small grey parent link plus a '>' separator and a ~44px white genre title. Raise the synopsis to ~22px and the CTA labels to ~22px, and add a ~24px row heading."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Both have line search and bell icons, a circled-i info icon, a red-logo wordmark, 16:9 cover-cropped card images, and red TOP-N corner badges. The reference's Play icon is a filled triangle, while the implementation's is outlined. The reference also has a Kids colourful icon and a smiley avatar.",
+      "fix": "Use a filled play triangle and add the Kids icon next to its label."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "The nav labels, 'Play' and 'More Info' match. The breadcrumb copy differs: the reference uses a parent category with a '>' separator and a '<Genre> TV Shows' title, while the implementation uses 'Browse / Action'. The 'Kids' label and the row title are missing, and the card badge wording is 'NEW' rather than 'Recently Added'/'New Season'.",
+      "fix": "Change the breadcrumb to '<Parent> > <Genre title>', add 'Kids', add row titles such as 'Your Next Watch', and use 'Recently Added'/'New Season' labels."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Bottom content: the reference has a single titled horizontal carousel ('Your Next Watch') that bleeds off the right edge. The implementation has an untitled wrapping grid with a second row starting below.",
+    "Cards: the implementation adds a title and 'Movie · 2026' captions under each card, which the reference does not have. The reference's red status pills centred on the card bottom are missing (the implementation has only one 'NEW').",
+    "Breadcrumb/title: the reference shows a grey 'TV Shows >' plus a large ~44px white genre title. The implementation shows a small 'Browse / Action' line.",
+    "Hero right edge: the reference's mute circle button and 'TV-14' maturity tab are missing.",
+    "Nav: the reference shows a grey pill on the active item ('Shows') with larger ~17px labels. The implementation's nav is small with no active state.",
+    "Header right: the reference's 'Kids' link with icon is missing.",
+    "Hero text: the implementation's synopsis and CTA labels are noticeably smaller than the reference's ~22px.",
+    "Play button: the implementation uses an outlined play icon, while the reference uses a filled one."
+  ],
+  "fixes": [
+    "Convert the genre content into titled horizontal carousel rows (24px heading, cards overflowing the right edge, pagination ticks), and remove the per-card captions.",
+    "Add red bottom-centred status pills on cards ('Recently Added', 'New Season').",
+    "Restyle the breadcrumb as a grey parent link + '>' + a ~44px white genre title.",
+    "Add a mute circle button and a right-flush maturity rating tab in the hero at CTA height.",
+    "Enlarge the nav labels to ~17px and add a grey pill highlight for the active section.",
+    "Add a 'Kids' link with its icon between the bell and the avatar.",
+    "Increase the hero synopsis and button text to ~22px, and use a filled play triangle."
+  ],
+  "summary": "The Netflix hero skeleton and colours are clearly the same, but the rows render as a captioned wrapping grid instead of a titled carousel. The large genre title, active-nav pill, Kids link, maturity tab and card status labels are missing, and the type is undersized."
+}
+```

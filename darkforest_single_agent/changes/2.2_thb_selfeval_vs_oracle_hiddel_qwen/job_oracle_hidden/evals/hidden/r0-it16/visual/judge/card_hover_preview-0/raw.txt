@@ -1,0 +1,72 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Both use the same top nav with logo on the left, links in a row and icons on the right, over a dark page with stacked horizontal rows. The reference has a breadcrumb heading ('TV Shows > Sports TV Shows') right under the nav, then rows start straight away. The implementation has a large billboard hero (title, synopsis, Play/More Info) in that spot instead. Reference rows use about 6.5 landscape 16:9 tiles per row; the implementation uses about 10.5 portrait 2:3 posters. In the reference the hover card is centred on its tile and grows over the rows above and below. In the implementation the card sits hard against the left edge, covers the 'Trending Now' heading and is much smaller than the reference card.",
+      "fix": "Replace the billboard hero with the page-header breadcrumb (grey 'TV Shows' > large white page title), use landscape 16:9 tiles about 290px wide, and centre the hover card on its tile at about 1.5x scale so it never covers the row heading."
+    },
+    "components": {
+      "score": 0.55,
+      "missing": [
+        "breadcrumb page header (parent > category title)",
+        "Kids profile link with icon in the nav",
+        "pill highlight on the active nav item",
+        "title-artwork lockup over the hover-card preview",
+        "mute toggle button on the hover-card preview",
+        "seasons count text next to the rating",
+        "HD quality badge",
+        "right-aligned large expand chevron button",
+        "row page-indicator dashes at the top right of each row",
+        "tile badges (Top 10 corner badge, red 'Recently Added' / 'Live Now' tags)"
+      ],
+      "fix": "Add the breadcrumb header and the Kids nav link. In the hover card, overlay the title logo bottom-left of the preview with a round mute button bottom-right, move the chevron to the far right, render the meta row as boxed 'TV-14' + '3 Seasons' + boxed 'HD', and drop the '92% Match' line. Add row pagination dashes and the Top 10 / Recently Added tile badges."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat, dark and cinematic, with slightly rounded tiles and a dark card surface with a shadow. The reference hover card is roomy: about 50px circular buttons with 2px borders and generous padding. The implementation's card is cramped: about 30px buttons with thin strokes and tight padding. The implementation also shows an empty-state row ('You haven't watched anything yet') with no matching element in the reference.",
+      "fix": "Scale the hover card up: buttons about 52px with 2px white/grey borders, about 20px internal padding, larger metadata text. Hide rows that have no data instead of showing empty-state text."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Black/near-black base, #181818 card surface, white Play circle and grey-bordered secondary buttons all match. The implementation adds green '92% Match' text in the card and hero, which the reference card doesn't have. The reference's red tile badges aren't present.",
+      "fix": "Remove the green match text from the hover card and add the red 'Recently Added' tile tags and Top 10 badges."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif UI face. The reference card metadata is about 17px white with a boxed rating; the implementation's card text is about 13px. Reference nav links are about 17px; the implementation's are about 14px. The reference has a large 40px page title that the implementation lacks. Its active nav item is bold text instead of a pill.",
+      "fix": "Set nav links to about 17px regular with the active item in a grey pill. Add a 40px white page title. Set hover-card metadata and tags to about 17px with dot separators."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Line-style play, plus, thumbs-up and chevron icons in circles match in kind but are undersized. Tile artwork in the reference is landscape 16:9 with the title baked in; the implementation uses portrait posters. The preview image in the hover card has no title lockup. The avatar is a green letter tile rather than the reference's blue smiley avatar, and the Kids icon is absent.",
+      "fix": "Switch rails to 16:9 backdrop art with the title logo, overlay the title logo on the hover preview, enlarge the action icons to match the reference, and add the Kids icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages). The 'Kids' nav label and the breadcrumb copy are missing. The card shows '92% Match 2026' instead of the seasons count, and there's no 'HD' label.",
+      "fix": "Add the 'Kids' label and the breadcrumb, and show 'N Seasons' plus 'HD' in the hover-card meta row."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Top of page: implementation shows a billboard hero with synopsis and Play/More Info; the reference has a breadcrumb header ('TV Shows > Sports TV Shows') and rows start immediately",
+    "Rails: implementation uses portrait 2:3 posters (about 10 per row); the reference uses landscape 16:9 tiles (about 6.5 per row)",
+    "Hover card: implementation is small, pinned to the left edge and covers the row title; the reference card is large and centred over its tile",
+    "Hover card preview: no title-artwork lockup bottom-left and no round mute button bottom-right",
+    "Hover card actions: buttons are about 30px with the chevron grouped beside them; the reference has about 50px buttons and the chevron far right",
+    "Hover card meta: implementation shows green '92% Match' + year with TV-14 on the right; the reference shows boxed TV-14, '3 Seasons' and a boxed HD badge on the left",
+    "Nav: active item is bold text, not a grey pill; the Kids link is missing; nav text is smaller",
+    "Rows: no page-indicator dashes at the top right of rows; no Top 10 or red Recently Added tile badges",
+    "Middle: 'Continue Watching' empty-state text row has no matching element in the reference"
+  ],
+  "fixes": [
+    "Replace the hero billboard with the breadcrumb page header (grey parent link > 40px white category title)",
+    "Change rail tiles to 16:9 landscape backdrops with title art, about 290px wide",
+    "Rebuild the hover card: about 1.5x scale centred on its tile, title logo + mute button over the preview, 52px circular Play/Add/Like buttons on the left, chevron on the right",
+    "Meta row: boxed 'TV-14', 'N Seasons', boxed 'HD'; tag row with dot separators; remove the green match text",
+    "Nav: grey pill on the active item, add the Kids link, enlarge links to about 17px",
+    "Add row pagination dashes and Top 10 / Recently Added badges; hide empty rows"
+  ],
+  "summary": "The implementation matches the overall look of dark rows plus a hover card, but it uses a hero instead of the breadcrumb header and portrait posters instead of landscape tiles, and its hover card is undersized and off-centre with no title lockup or mute button and different metadata."
+}

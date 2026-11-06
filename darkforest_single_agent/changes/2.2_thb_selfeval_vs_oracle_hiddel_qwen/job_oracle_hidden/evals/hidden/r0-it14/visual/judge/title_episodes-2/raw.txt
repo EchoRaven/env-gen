@@ -1,0 +1,65 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Both show a centred dark modal (~1080px wide) over a dimmed home page, with a scrolled synopsis above an 'Episodes' header and a vertical list of episode rows separated by hairlines. Row order differs: the reference has a large episode number on the far left, then the thumbnail, then the text block. The implementation puts the thumbnail first and the number between thumbnail and text. In the reference the duration sits top-right, level with the episode title. The implementation centres it vertically at the far right edge. The reference's tag info ('This Show Is:') sits top-right beside the synopsis; the implementation has a left-aligned genres line under the synopsis instead.",
+      "fix": "Change each episode row to: number (left, ~40px column, vertically centred) → thumbnail (~170x96) → text block, with title and duration on one line (duration right-aligned at the end of the text column, ~80px from the row's right edge) and the description below."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "Present: episodes heading, episode rows with number, thumbnail, title, description and duration, dividers, and a highlighted row. Differences: the implementation adds a bordered 'Season 1' select and a '4 Seasons' label; the reference has only plain right-aligned text (the season/show name) and no dropdown control. The implementation shows a small play button in the bottom-right corner of every thumbnail. The reference shows only one large centred play circle on the hovered thumbnail. The highlighted row's background in the reference fills a rounded, slightly lighter panel.",
+      "missing": [
+        "plain-text season label on the right of the Episodes header (replaced by a bordered select)",
+        "hover-only centred play overlay on the thumbnail"
+      ],
+      "fix": "Replace the bordered select and '4 Seasons' label with right-aligned plain text (~20px, white). Remove the always-on corner play icons and show one large (~56px) outlined play circle centred on the thumbnail of the hovered row only."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat, dark, minimal treatment with hairline dividers. The reference's highlighted row is a lighter panel with slightly rounded corners and more generous padding. The implementation's rows are a bit tighter, and the bordered select adds a form-control look the reference doesn't have.",
+      "fix": "Give the active/hover row a #333-ish background with a ~4px radius and ~24px padding. Remove the select border styling."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a near-black modal (#181818) over a dimmed page with white titles. The implementation's description text is dimmer grey and the episode numbers are grey. In the reference both are near-white, giving higher contrast.",
+      "fix": "Set episode descriptions to ~#d2d2d2 and episode numbers to white."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Episode titles are bold in the reference and regular weight in the implementation. Reference descriptions are ~15-16px with ~1.5 line height; the implementation uses ~13px with tight leading. The reference's episode numbers are large (~26px) and white; the implementation's are smaller and grey. Durations in the reference are ~17px white, while the implementation's are small and grey.",
+      "fix": "Episode title: 17px, weight 700. Description: 15px, line-height 1.5, light grey. Number: 26px, white. Duration: 17px, white, on the title line."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Thumbnails are 16:9 cover crops in both, with square-ish corners. The implementation stamps a small filled play icon on every thumbnail. The reference shows only a large, thin-outlined circular play glyph centred on the hovered thumbnail.",
+      "fix": "Show a single ~56px outlined white play circle, centred, only on the hovered row's thumbnail."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The 'Episodes' heading matches. The implementation adds '4 Seasons' and 'Season 1' select wording; the reference shows only the season/show name as plain text. The reference's 'This Show Is:' label is replaced by 'Genres:'.",
+      "fix": "Drop the '4 Seasons' label and show the season name as plain text. Use the 'This Show Is:' label for the tag line."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "episode rows: the implementation puts the thumbnail before the episode number; the reference puts the number first, then the thumbnail",
+    "episode rows: the duration is centred at the far right in the implementation; the reference places it top-right, level with the bold title",
+    "Episodes header right side: the implementation shows a '4 Seasons' label and a bordered 'Season 1' select; the reference shows only plain white text",
+    "thumbnails: the implementation shows a small corner play icon on every thumbnail; the reference shows one large centred play circle on the hovered row only",
+    "episode titles: regular weight in the implementation, bold in the reference; descriptions are smaller and dimmer than the reference's ~15px light text",
+    "episode numbers: small and grey in the implementation, large and white in the reference",
+    "above the episodes: the implementation adds a left-aligned 'Genres:' line; the reference has the 'This Show Is:' tag info top-right beside the synopsis",
+    "highlighted row: the reference uses a lighter panel with rounded corners; the implementation uses a flat, subtle highlight"
+  ],
+  "fixes": [
+    "Reorder each episode row to number → thumbnail → text block",
+    "Move the duration onto the title line, right-aligned within the text column",
+    "Make episode titles bold (~17px) and descriptions ~15px light grey with 1.5 line height; make numbers ~26px white",
+    "Replace the bordered season select and '4 Seasons' label with plain right-aligned white text",
+    "Remove the per-thumbnail corner play icons and add one large centred outlined play circle on the hovered row's thumbnail",
+    "Style the active row with a lighter (#333) panel and a ~4px radius",
+    "Move the tag/genre line to a right-hand column beside the synopsis, using the 'This Show Is:' label"
+  ],
+  "summary": "Same dark modal with a list of episodes, but the row anatomy (number/thumbnail order, duration placement, bold titles), the season selector and the play overlays don't match the reference."
+}

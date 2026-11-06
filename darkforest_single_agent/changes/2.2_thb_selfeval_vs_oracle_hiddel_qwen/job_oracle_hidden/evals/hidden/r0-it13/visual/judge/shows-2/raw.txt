@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both use a transparent top nav over a full-bleed hero, the hero text block sits left with the buttons under it, and a carousel row starts below. Differences: the reference puts the 'TV Shows' title and Genres dropdown at the top-left just under the nav, overlaid on the hero. The implementation moves them below the hero, above the first row. The reference's first row starts at about 78% of the viewport height and overlaps the hero's bottom fade. In the implementation the row starts lower, about 87%. The reference puts the mute button and the TV-MA rating flag at the far right of the hero. The implementation puts the rating inline next to More Info.",
+      "fix": "Move the 'TV Shows' heading and Genres dropdown into an absolutely positioned sub-header at about 100px from the top, left gutter, overlaying the hero. Pull the first row up so it overlaps the hero's bottom gradient. Move the maturity rating to a right-edge flag with a mute button beside it at hero button height."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: nav with 7 items, search, bell, profile avatar with caret, Play and More Info buttons, Genres dropdown, row title, carousel. Missing: the 'Kids' link with its icon in the nav; the pill highlight on the active 'Shows' item (the implementation shows bold text only); the Netflix 'N-series' tag above the hero title; the TOP 10 badge with '#1 in TV Shows Today'; the round mute/volume button; the right-edge rating flag; TOP 10 corner badges on the tiles; red 'New Season' / 'Recently Added' / 'New Episode' ribbons on the tiles; the row page-indicator bars. Invented: a '92% Match' and year metadata row that the reference does not show.",
+      "missing": ["Kids profile link in nav", "active-tab pill background on 'Shows'", "NETFLIX series tag above hero title", "TOP 10 badge + '#1 in TV Shows Today' line", "mute/volume circular button", "right-edge maturity rating flag", "TOP 10 corner badges on row tiles", "'Recently Added'/'New Season'/'New Episode' red ribbons on tiles", "row pagination indicator bars"],
+      "fix": "Add a Kids link to the nav and a rounded pill behind the active nav item. Add the red 'NETFLIX' series tag above the title, the TOP 10 badge row, the mute circle button and the right-edge rating flag. Render TOP 10 corner badges and red bottom-centre status ribbons on tiles. Add the page indicator above the row's right end. Remove the Match/year line."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Same flat, cinematic, dark Netflix style with a gradient-dimmed hero and square-cornered buttons. The implementation dims the hero much more heavily, so it looks murky. The reference image is bright and vivid with only a left and bottom vignette. The reference's Genres control is a black box with a white border and a custom caret. The implementation uses a native rounded select.",
+      "fix": "Lighten the hero overlay to a left-side linear gradient plus a bottom fade only. Style Genres as a black box with a 1px white border, square corners and a white triangle caret."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Same dark base, Netflix red, white Play button and translucent grey More Info button. The implementation adds a green Match accent that the reference doesn't have. The hero is much darker overall. Red badge and ribbon accents are missing from the tiles.",
+      "fix": "Drop the green Match text, reduce the hero darkening, and add the red TOP 10 and ribbon accents."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use sans-serif type with a similar hierarchy. The reference's nav labels are larger, about 17px and grey, with white for the active item. The implementation's are smaller, about 14px. The reference's 'TV Shows' heading is large, about 44px, and regular weight. The implementation's is bold and smaller. The reference's description text is larger, about 22px, and the row title is about 26px at regular weight, while the implementation's is semibold.",
+      "fix": "Set nav labels to about 17px. Make 'TV Shows' about 44px at regular weight. Set hero synopsis to about 22px and row titles to about 26px, both at regular weight."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Search, bell, play and info icons are line style and match. The reference's tiles are 16:9 landscape boxart at about 290px wide. The implementation uses portrait poster tiles, which is a major crop difference. The reference's hero title is a graphic logo treatment. The implementation renders it as text in a display font, which is acceptable. The reference's avatar is a blue smiley square. The implementation uses a green letter square, which is acceptable. The Kids icon is missing.",
+      "fix": "Change row tiles to 16:9 landscape boxart, about 290×165px, with about 8px gaps. Use title-logo artwork for the hero title where it's available."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels, Play, More Info, 'TV Shows' and 'Genres' all match. The implementation's row title is 'Today's Top Picks', but the reference reads 'Today's Top Picks for You'. The implementation has no 'Kids' label and no '#1 in TV Shows Today' line.",
+      "fix": "Rename the row to 'Today's Top Picks for You'. Add the 'Kids' label and the '#1 in TV Shows Today' line."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Row tiles: the implementation uses portrait poster tiles; the reference uses 16:9 landscape boxart tiles",
+    "'TV Shows' heading and Genres dropdown: the implementation places them below the hero; the reference overlays them top-left under the nav",
+    "Tiles: no TOP 10 corner badges and no red 'Recently Added'/'New Season'/'New Episode' ribbons, all of which the reference shows",
+    "Hero: no TOP 10 badge with '#1 in TV Shows Today' line and no red NETFLIX series tag above the title",
+    "Hero right edge: no circular mute button and no rating flag; the implementation puts a small boxed TV-14 next to More Info instead",
+    "Hero: an invented green '92% Match' and year metadata line that the reference does not show",
+    "Nav: no Kids link, and the active 'Shows' item lacks the grey pill background",
+    "Hero: overlay is too dark; the reference's image is bright with only a left and bottom vignette",
+    "Genres control: the implementation uses a native rounded select; the reference uses a black, white-bordered square box with a caret",
+    "Typography: nav labels and the 'TV Shows' heading are smaller and bolder than the reference's",
+    "First row: starts lower and doesn't overlap the hero's bottom fade the way the reference's does"
+  ],
+  "fixes": [
+    "Render row tiles as 16:9 landscape boxart at about 290px wide with small gaps",
+    "Move 'TV Shows' (about 44px, regular weight) and a custom black, white-bordered Genres dropdown to the top-left under the nav, overlaying the hero",
+    "Add TOP 10 corner badges and red bottom-centre status ribbons on tiles",
+    "Add the hero's TOP 10 badge with '#1 in TV Shows Today' and the red NETFLIX series tag above the title, and remove the Match/year line",
+    "Add a circular mute button and a right-edge rating flag at button height on the right side of the hero",
+    "Add the Kids nav link and a grey pill highlight on the active nav item, and enlarge nav labels to about 17px",
+    "Lighten the hero overlay to a left-side and bottom gradient only, and pull the first row up to overlap the hero's bottom",
+    "Rename the row title to 'Today's Top Picks for You' and add the row page indicator"
+  ],
+  "summary": "The implementation has the right Netflix shell and hero structure, but its portrait tiles, relocated title and Genres control, missing TOP 10 and ribbon badges, and heavily darkened hero set it noticeably apart from the reference."
+}
+```

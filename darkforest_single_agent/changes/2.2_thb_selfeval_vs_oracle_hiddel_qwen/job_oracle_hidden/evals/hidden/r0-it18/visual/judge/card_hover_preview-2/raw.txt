@@ -1,0 +1,76 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Both use a dark Netflix top bar and stacked horizontal rails, with a hover card expanding over the rail. The reference is a genre sub-page: under the nav it has a breadcrumb header ('TV Shows > Sports TV Shows'), and the rails run straight down the page with no hero. The implementation shows the Home billboard hero (title, synopsis, Play/More Info) instead. The reference rails use landscape 16:9 tiles about 290px wide, about 6.3 per row. The implementation uses portrait 2:3 posters about 168px wide. The reference hover card sits centred over its tile, about 435px wide, and stays inside the content gutter. The implementation's card is pinned to the far-left edge (x≈8), hangs past the 77px gutter and covers the 'Trending Now' heading. The nav bar in the implementation is shorter and more compact.",
+      "fix": "Render this screen as the genre page. Drop the billboard and show a breadcrumb row under the nav ('TV Shows >' in grey, page title in large white type). Switch the rails to landscape 16:9 tiles about 290×165 with about 8px gaps. Centre the hover card on the hovered tile at about 1.5× tile width (about 435px), keep it inside the page gutters, and don't let it cover the rail heading."
+    },
+    "components": {
+      "score": 0.55,
+      "missing": [
+        "breadcrumb page header (parent link + chevron + large page title)",
+        "title-logo artwork over the hover-card preview",
+        "mute/volume toggle on the hover-card preview",
+        "right-aligned 'more info' chevron button in the hover card",
+        "season-count text and HD badge in the hover-card metadata row",
+        "pill highlight on the active nav item",
+        "Kids profile shortcut in the nav",
+        "rail page-indicator dashes at the top right of each rail",
+        "tile badges (TOP 10 corner flag, 'Recently Added'/'Live Now' red tags)"
+      ],
+      "notes": "The hover card has the same button inventory (play, add, rate, expand) and a tag row with dot separators. The expand chevron sits in line with the other buttons instead of being pushed to the right. The maturity rating sits on the right of the button row, not first in the metadata row. The card adds a green '92% Match' and a year, which the reference card doesn't show. The page also has a hero billboard and an empty-state line ('You haven't watched anything yet…') that aren't in the reference. The reference's breadcrumb, Kids entry, rail indicators and tile badges are absent.",
+      "fix": "Restructure the hover card: big preview with a title-logo overlay at the bottom left and a circular mute button at the bottom right. Under it, put the button row ([Play filled white] [+] [thumb] … right-aligned [chevron]), then a metadata row ([TV-14 outlined box] '3 Seasons' [HD outlined badge]), then the tag row. Remove the Match % and year. Add the breadcrumb header, the pill-style active nav item, the Kids entry and the rail page indicators. Add TOP 10 and 'Recently Added' badges on tiles."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both have a flat dark surface, slightly rounded tiles and a hover card on a raised #181818-style surface with a shadow. The reference card controls are large (about 50px circles with 2px grey rings) and the card has generous padding. The implementation's controls are small (about 30px) with tight padding, so the card reads cramped. The reference has no hero gradient area; the implementation is dominated by a dimmed billboard.",
+      "fix": "Scale the hover-card buttons to about 50px circles with a 2px rgba(255,255,255,.5) ring. Pad the card body about 18px horizontally and space the rows about 14px apart. Keep the card corners at about 6px with a soft drop shadow."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "The palette matches: near-black background, white text, red NETFLIX wordmark, white filled play button. The implementation adds a green Match colour that the reference card doesn't show. The reference's active nav uses a grey pill (#333), while the implementation uses bold white text. The reference's red badges are missing. The implementation's nav background is #141414 grey rather than the reference's pure black header area.",
+      "fix": "Remove the green match text from the card. Give the active nav item a #333 pill background. Use pure black for the header and breadcrumb band. Add red (#E50914) badge fills for 'Recently Added'."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a clean sans-serif. The reference's nav labels are about 17px, while the implementation's are about 14px and denser. The reference card metadata is about 17px white and the tags about 17px, which is readable. The implementation's are about 13px. The reference has a large page-title level (about 44px) that the implementation lacks. Rail headings are about 26px in both, roughly the same.",
+      "fix": "Raise the nav labels to about 17px with wider spacing. Set the hover-card metadata and tags to about 16–17px in white with grey dot separators. Add the about 44px page title in the breadcrumb header."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "The line-style circular icons (plus, thumb, chevron) and the filled play glyph match in style but are too small. The mute icon on the preview is missing. Tiles are portrait posters, not landscape key art with an embedded title treatment. The preview has no title-logo lockup. The reference has outlined TV-14 and HD badges; the implementation has only TV-14, placed elsewhere. The avatar is a rounded square in both, but the implementation uses a letter tile.",
+      "fix": "Use 16:9 landscape artwork for tiles and the hover preview, with a title-logo image overlaid at the bottom left of the preview. Add a mute icon in a circular outline at the bottom right of the preview. Enlarge the card icons to about 24px glyphs in 50px circles."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "The nav labels mostly match ('Home', 'Shows', 'Movies', 'Games', 'New & Popular', 'My List', 'Browse by Languages'), but the 'Kids' label is missing. The breadcrumb copy ('TV Shows >') is missing. The card metadata uses 'Match/year' wording where the reference uses an 'N Seasons' + 'HD' pattern.",
+      "fix": "Add the 'Kids' nav label and a 'TV Shows >' breadcrumb. In the hover card, show '<N> Seasons' and 'HD' next to the rating."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "page top: the implementation shows the Home billboard hero with synopsis and Play/More Info; the reference has a black breadcrumb header 'TV Shows > Sports TV Shows' with rails directly below",
+    "rails: the implementation uses portrait 2:3 posters (~168px); the reference uses landscape 16:9 tiles (~290×165)",
+    "hover card position: the implementation's card is pinned to the far-left screen edge outside the gutter and covers the 'Trending Now' heading; the reference card is centred over its tile inside the gutters",
+    "hover card preview: the reference overlays a title-logo lockup and a circular mute button on the preview; the implementation shows the bare image",
+    "hover card controls: the reference has large ~50px circle buttons with the expand chevron pushed far right; the implementation has small ~30px buttons with the chevron in line and TV-14 on the right",
+    "hover card metadata: the reference row is [TV-14 box] '3 Seasons' [HD badge]; the implementation shows a green '92% Match' + year instead",
+    "nav: the reference highlights the active item with a grey pill and has a Kids profile shortcut; the implementation uses bold text, has no Kids entry, and uses smaller labels",
+    "tiles: the reference has TOP 10 corner flags and red 'Recently Added'/'Live Now' badges; none appear in the implementation",
+    "rails: the reference shows page-indicator dashes at the top right of each rail; the implementation has none",
+    "middle of page: the implementation shows an empty-state text line under 'Continue Watching', which the reference doesn't have"
+  ],
+  "fixes": [
+    "Render the hover-preview demo on the genre page layout: breadcrumb header ('TV Shows >' grey + ~44px white title) on black, no billboard hero",
+    "Switch the rail tiles to 16:9 landscape (~290×165, ~8px gaps) and add rail page-indicator dashes at the top right",
+    "Position the hover card centred over the hovered tile at ~1.5× tile width, clamped inside the page gutters, without covering the rail headings",
+    "Hover card preview: add a title-logo overlay at the bottom left and a circular outlined mute button at the bottom right",
+    "Hover card body: ~50px circular buttons [play filled][+][thumb] with a right-aligned [chevron]; then [TV-14 outlined] '3 Seasons' [HD outlined]; then the tag row with dot separators at ~17px; remove Match % and year",
+    "Nav: grey pill behind the active item, ~17px labels, add the Kids shortcut before the avatar",
+    "Add TOP 10 corner flags and red 'Recently Added' bottom badges on applicable tiles"
+  ],
+  "summary": "The hover card has the right building blocks, but it sits on the Home billboard page with portrait posters instead of the breadcrumb genre page with landscape tiles. The card also lacks the title-logo overlay, mute button, right-aligned chevron and Seasons/HD metadata, and is placed off the left edge."
+}
+```

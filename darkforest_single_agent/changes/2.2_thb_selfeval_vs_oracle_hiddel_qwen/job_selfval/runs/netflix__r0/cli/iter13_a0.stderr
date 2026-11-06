@@ -1,0 +1,2 @@
+2026-11-05T16:51:54.074864Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs
+2026-11-05T16:51:54.726274Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs

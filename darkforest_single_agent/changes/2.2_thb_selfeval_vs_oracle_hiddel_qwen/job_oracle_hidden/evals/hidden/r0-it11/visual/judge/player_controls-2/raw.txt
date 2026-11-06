@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The overall structure matches: full-bleed video, a back arrow at top-left, a full-width scrubber above one row of controls, playback controls on the left, utility controls on the right and the time readout at the right end of the scrubber. What differs: the top-right corner is empty where the reference has a flag/report icon, the centre of the control row is empty where the reference shows the title lockup, and the control row sits tighter and lower, with smaller hit areas.",
+      "fix": "Add a top-right flag icon mirroring the back arrow (~40px inset). Put a centred title lockup in the middle of the bottom control row. Give the control row ~90px height with ~45px icons, as in the reference."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, play/pause, skip back 10s, skip forward 10s, volume, subtitles, fullscreen, scrubber and time readout. Missing: flag/report icon, centred episode title, next-episode button and episodes (stacked cards) button. Invented: an inline volume slider, an 'AD' audio-description button and a list icon that the reference doesn't have. The scrubber has no red progress fill, buffered segment or red thumb.",
+      "missing": ["top-right flag/report icon", "centred title + episode label in the control row", "next-episode button", "episodes (stacked cards) button", "red progress fill with circular red scrubber thumb", "buffered-range segment on the scrubber"],
+      "fix": "Add the flag icon top-right, the centred title, the next-episode (play-with-bar) icon and the episodes (stacked rectangles) icon before subtitles. Remove the volume slider, the AD button and the list icon. Style the scrubber with a red played portion, a red round thumb and a light-grey buffered segment."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both are flat and minimal with chrome sitting directly on the video. The implementation's icons are much smaller and thinner, which makes it feel compact and utilitarian. The reference uses large, bold controls spaced generously apart.",
+      "fix": "Scale control icons to ~45-50px with ~90px spacing, and make the scrubber track thicker (~4px)."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use white chrome on a dark or video background. The red accent is missing from the scrubber (the reference has a red played portion and a red thumb). The implementation's track is a faint single grey with no light-grey buffered range.",
+      "fix": "Make the played portion and thumb Netflix red (#E50914), the buffered range light grey (#bbb) and the remaining track mid grey (#777)."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "The time text is a small white sans in both, but the implementation shows '0:00 / 0:00' where the reference shows only the remaining time. The centred title lockup is missing entirely: a bold show title followed by a regular-weight episode label in a ~22px white sans.",
+      "fix": "Show only the remaining time (e.g. '32:57') at the right of the scrubber. Add a centred title: bold show name, then a regular-weight 'E1  Episode title'."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use white outline icons, but the implementation's are roughly half the reference's size and thinner. The skip-10 icons lack the clear circular arrows with '10' inside. The implementation's volume icon shows a muted (x) state. There are icons the reference lacks (AD, list) and the reference's next-episode, episodes and flag icons are absent. The pause icon is shown as play, which is a state difference.",
+      "fix": "Use a larger, bolder outline set (~48px) with circular-arrow '10' icons, a speaker-with-waves volume icon, and the reference's flag, next-episode, episodes and speech-bubble subtitles glyphs."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "There is very little copy. The title/episode label that the reference shows is missing, and the time format differs (elapsed / total vs remaining only).",
+      "fix": "Render '<Show> E<n>  <Episode title>' centred in the control row, and change the time readout to remaining time only."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Bottom control row centre: the reference shows a centred title lockup (bold show name + episode label); the implementation leaves this area empty",
+    "Bottom-right controls: the reference has next-episode and episodes (stacked cards) buttons before subtitles; the implementation lacks both and adds an 'AD' button and a list icon instead",
+    "Top-right: the reference has a flag/report icon; the implementation has nothing",
+    "Bottom-left: the implementation adds an inline volume slider that the reference doesn't have",
+    "Scrubber: the reference has a red played segment, a red round thumb and a light-grey buffered range; the implementation shows a faint uniform grey line",
+    "Control icons: the implementation's icons are about half the reference's size and thinner in stroke, so the row reads as cramped",
+    "Time readout: the implementation shows '0:00 / 0:00'; the reference shows remaining time only"
+  ],
+  "fixes": [
+    "Add a centred title lockup in the bottom control row: bold show title + regular 'E# Episode title', ~22px white",
+    "Add next-episode and episodes (stacked cards) icon buttons to the right group before subtitles; remove the AD and list icons",
+    "Add a flag/report icon at top-right, mirroring the back arrow",
+    "Remove the inline volume slider and keep just the speaker-with-waves icon",
+    "Restyle the scrubber: red played fill, red circular thumb, light-grey buffered segment, grey remainder",
+    "Scale all control icons to ~48px with bolder strokes and wider spacing; use circular-arrow '10' skip icons",
+    "Change the time readout to remaining time only (e.g. '32:57')"
+  ],
+  "summary": "The basic player skeleton is right, but it's missing the centred title, the next-episode, episodes and flag icons, and the red scrubber, while adding a volume slider plus AD and list buttons. Its icons are also undersized compared with the reference's large bold controls."
+}
+```

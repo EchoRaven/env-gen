@@ -1,0 +1,126 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_selfval/runs/netflix__r0/snapshots/iter13/workspace",
+ "tag": "selfval-it13",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 46,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 3,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 4,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 6,
+  "total": 22,
+  "failed": [
+   "browse home has a hero billboard (>=60% wide)",
+   "browse home shows poster rails (>=10 images loaded)",
+   "nav 'Home' opens its screen",
+   "nav 'Shows' opens its screen",
+   "nav 'Movies' opens its screen",
+   "nav 'Games' opens its screen",
+   "nav 'New & Popular' opens its screen",
+   "nav 'My List' opens its screen",
+   "nav 'Browse by Languages' opens its screen",
+   "clicking a poster opens the title detail with Play",
+   "+ My List from the detail shows up on My List",
+   "another profile's My List does not show it",
+   "search finds a title by name",
+   "Play opens /watch/:id with a loadable video",
+   "the account menu offers Sign out",
+   "no console errors during the walk"
+  ]
+ },
+ "visual_captured": 10,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 2
+ },
+ "visual": {
+  "mean_similarity": 0.298,
+  "n_scored": 10,
+  "n_screens": 20,
+  "below_0.55": [
+   "browse_by_languages",
+   "browse_home",
+   "browse_home_rows",
+   "games",
+   "login",
+   "new_and_popular",
+   "shows"
+  ],
+  "per_screen": {
+   "landing": 0.593,
+   "login": 0.5,
+   "browse_home": 0.023,
+   "browse_home_rows": 0.03,
+   "shows": 0.03,
+   "movies": 0.6,
+   "games": 0.483,
+   "new_and_popular": 0.03,
+   "genre_category": 0.667,
+   "browse_by_languages": 0.023,
+   "my_list": null,
+   "title_detail": null,
+   "title_episodes": null,
+   "rate_dialog": null,
+   "player": null,
+   "player_controls": null,
+   "account_menu": null,
+   "card_hover_preview": null,
+   "card_preview": null,
+   "shows_genres_menu": null
+  }
+ }
+}

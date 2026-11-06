@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Matches: a centered dark modal over a dimmed home page, with an 'Episodes' header row (title left, season control right) and a vertical list of rows laid out as number | 16:9 thumbnail | title + description | runtime on the right. Differs: the reference modal is much wider (~1085px, roughly 56% of the viewport) while the implementation's is ~780px. The reference shows a wider gap between the thumbnail and the text and longer text lines. The implementation is scrolled less far, so the hero art, title lockup and buttons are still in view, whereas the reference has scrolled past them to the description.",
+      "fix": "Widen the More Info modal to about 1085px (max-width ~57vw) with ~53px side padding, keep the episode list full width inside it, and keep the header row as 'Episodes' left with the season label right."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Present: the Episodes heading, a season control, and episode rows with number, thumbnail, title, runtime and description. Differs: the reference rows are not separate cards. They sit flat and are separated by hairline dividers, and only the current/first episode gets a filled, slightly rounded highlight. The implementation draws each row as its own filled card with gaps between them and no dividers. The reference season control is plain text (the season name). The implementation uses a boxed native <select> showing 'Season 1'. The reference shows a circular play overlay on the hovered thumbnail. The implementation shows none, and it highlights row 2 instead.",
+      "missing": ["hairline dividers between episode rows", "play-icon overlay on hovered episode thumbnail", "highlighted current-episode row treatment (first row)"],
+      "fix": "Make episode rows transparent, add a 1px #404040 bottom border to each, give only the current episode a #333 background with ~4px radius, show a circular outlined play icon centered on the thumbnail on hover, and render the season selector as plain text or a borderless dropdown."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are flat, minimal dark Netflix styling. The reference list is divider-separated and airy, with ~145px row pitch and generous padding. The implementation's list is card-separated, has tighter rows (~112px pitch) and smaller thumbnails.",
+      "fix": "Raise the row height to ~145px with ~25px vertical padding, enlarge thumbnails to ~170×96 with a ~4px radius, and use dividers instead of gaps between cards."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a #181818 modal on a dimmed backdrop with white titles and light-grey descriptions. The reference rows have no fill except the #333 active row. The implementation fills every row with a slightly lighter grey.",
+      "fix": "Remove the per-row background fill and keep the #333 fill only for the active/first episode."
+    },
+    "typography": {
+      "score": 0.68,
+      "notes": "Both use a sans-serif. The reference has bold episode titles (~17px), body-size descriptions (~15px, light grey, 2 lines), large episode numbers (~24px) and a ~15px runtime. The implementation uses regular-weight titles, small descriptions (~12px), a tiny runtime (~11px) in muted grey, and a small 'Episodes' heading. The reference heading is larger (~26px bold).",
+      "fix": "Episode titles: 17px bold, white. Descriptions: 15px, #d2d2d2, ~1.5 line-height. Runtime: 15px, white. Episode number: 24px, light grey. 'Episodes' heading: 24–26px bold."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Thumbnails use 16:9 cover crops in both, but the implementation's are smaller (~128×72 vs ~170×96). The implementation has no play-circle overlay on the hovered thumbnail.",
+      "fix": "Enlarge thumbnails to ~170×96 and add a white-outlined circular play icon overlay on row hover."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "'Episodes' heading and 'Nm' runtimes match. The season control reads 'Season 1' in a dropdown, while the reference shows the season name as plain text.",
+      "fix": "Show the season label as plain text when there is only one season; otherwise keep the dropdown but style it borderless."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Episode list: implementation draws each row as a separate filled card with gaps; reference rows are flat with hairline dividers, and only the first/current row is highlighted in grey",
+    "Modal width: implementation ~780px; reference ~1085px, so the reference has longer text lines and more room between columns",
+    "Episode row typography: implementation titles are regular weight and descriptions/runtime are tiny (~11–12px); reference titles are bold ~17px and descriptions ~15px",
+    "Thumbnails: implementation ~128×72; reference ~170×96, with a circular play overlay on the hovered row",
+    "Season control: implementation uses a boxed native select 'Season 1'; reference shows plain right-aligned season text",
+    "Highlight state: implementation highlights row 2 (hover) with no play overlay; reference highlights row 1 as the current episode"
+  ],
+  "fixes": [
+    "Widen the More Info modal to ~1085px",
+    "Remove card backgrounds from episode rows, add 1px #404040 bottom dividers, and give only the current episode a #333 rounded background",
+    "Increase row padding to ~25px and thumbnails to ~170×96 with ~4px radius",
+    "Make episode titles 17px bold, descriptions 15px #d2d2d2, runtime 15px white, numbers 24px",
+    "Add a circular outlined play icon over the thumbnail on row hover",
+    "Restyle the season selector as plain/borderless text aligned right, and make the 'Episodes' heading ~24px bold"
+  ],
+  "summary": "Same modal-with-episode-list structure, but the implementation is too narrow, uses filled cards instead of divider-separated rows, and has undersized type and thumbnails."
+}
+```

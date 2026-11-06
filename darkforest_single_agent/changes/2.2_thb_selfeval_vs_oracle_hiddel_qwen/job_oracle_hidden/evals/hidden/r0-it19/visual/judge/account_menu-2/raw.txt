@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The overall chrome matches: a dark top bar with the red wordmark at left, inline text nav, and search, bell and avatar at right. The dropdown is right-aligned under the avatar in both. Differences: the reference menu is wider (~275px) and taller, with generous row spacing, and is anchored with a small caret under the avatar. The implementation's menu is narrower and compact. The page behind the menu also differs: the reference shows the Browse by Languages grid with its title and preferences dropdown, while the implementation shows the Home hero.",
+      "fix": "Widen the dropdown to ~275px, anchor it under the avatar with a small caret, and give rows ~58px vertical spacing. Open it over the same Browse by Languages page if this state is meant to be reproduced."
+    },
+    "components": {
+      "score": 0.4,
+      "missing": [
+        "Kids profile row (kids avatar + 'Kids' label) at top of menu",
+        "Transfer Profile menu item",
+        "Help Center menu item",
+        "Leading icons on each menu item (pencil, transfer, person, question-circle)",
+        "Header Kids shortcut (kids avatar + 'Kids' label) left of the profile avatar",
+        "Pill-highlighted active nav item"
+      ],
+      "notes": "The implementation has only Manage Profiles, Account, a divider and Sign out of Netflix. It adds a 'PROFILE: VIS ONE' caption row that the reference does not have. It is missing the Kids profile row, Transfer Profile, Help Center and all of the item icons. The header lacks the Kids shortcut. The caret is a circled chevron button instead of a small bare triangle.",
+      "fix": "Rebuild the menu as: a Kids profile row (32px kids avatar + 'Kids'), then Manage Profiles, Transfer Profile, Account and Help Center, each with a 24px outline icon, then a hairline divider and Sign out of Netflix. Remove the 'PROFILE:' caption. Add the kids avatar and 'Kids' label to the header before the profile avatar. Replace the circled chevron with a small ▲ caret."
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Both menus are flat dark panels with a divider above Sign out. The reference panel has rounded corners (~8px), no visible outline and airy padding. The implementation's panel is square-cornered with a hairline grey border and dense rows. The reference's active nav item sits in a rounded pill; the implementation uses bold text instead.",
+      "fix": "Give the dropdown 8px corner radius, remove the 1px border, add a soft shadow, and increase row padding to ~16px vertical and 18px horizontal. Put the active nav item in a dark-grey pill."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a near-black page, a dark-grey menu surface, white menu text and a red wordmark. The implementation's menu reads more black-on-black and has a grey border line. Its avatar is a green letter tile, while the reference uses a blue smiley avatar tile and a colourful kids tile.",
+      "fix": "Set the menu background to ~#232323 with no border, keep the divider a subtle #333 hairline, and use pure white menu text."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use a sans-serif. The reference menu items are ~18px regular; the implementation's are ~14px. The implementation adds a small uppercase grey caption that the reference lacks. Reference nav labels are ~18px; the implementation's are ~14px, and it bolds the active item instead of using a pill.",
+      "fix": "Raise menu items to ~18px regular and nav links to ~17–18px. Drop the uppercase caption, and use semibold text inside a pill for the active nav item."
+    },
+    "iconography": {
+      "score": 0.45,
+      "notes": "The reference has outline icons (pencil, transfer/profile, person, question-circle) next to the menu items, plus a kids avatar tile. The implementation's menu has no icons. Both headers use line-style search and bell icons. The profile avatar is a rounded-square tile in both, but the caret in the implementation is a circled button rather than a small triangle.",
+      "fix": "Add 24px thin-stroke outline icons left of Manage Profiles, Transfer Profile, Account and Help Center. Add a 32px kids avatar tile for the Kids row and header shortcut, and use a small solid ▲ caret next to the avatar."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Kids', 'Transfer Profile' and 'Help Center' are missing. 'PROFILE: VIS ONE' is invented copy.",
+      "fix": "Add the labels 'Kids', 'Transfer Profile' and 'Help Center', and remove 'PROFILE: …'."
+    }
+  },
+  "similarity": 0.52,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown: Kids profile row, Transfer Profile and Help Center items are missing; only Manage Profiles, Account and Sign out are present",
+    "Account dropdown: there are no leading outline icons on the menu items, which the reference has on each one",
+    "Account dropdown: an invented 'PROFILE: VIS ONE' uppercase caption sits at the top",
+    "Account dropdown: square corners with a grey hairline border, compact ~36px rows and ~14px text, versus the reference's rounded borderless panel with ~58px rows and ~18px text",
+    "Header right: the Kids shortcut (kids avatar + 'Kids' label) is missing before the profile avatar",
+    "Header right: the caret is a circled chevron button rather than a small bare ▲ triangle",
+    "Header nav: the active item is bold text rather than a rounded dark-grey pill, and nav labels are smaller (~14px vs ~18px)",
+    "Page behind the menu: Home hero instead of the Browse by Languages grid with its title and 'Original Language' preferences select"
+  ],
+  "fixes": [
+    "Rebuild the account menu items in this order: Kids (kids avatar), Manage Profiles (pencil), Transfer Profile (transfer icon), Account (person), Help Center (question-circle), then a divider and Sign out of Netflix",
+    "Remove the 'PROFILE: …' caption row",
+    "Style the menu at ~275px wide with 8px radius, no border, a soft shadow, a #232323 background, 18px regular white text and ~58px row pitch",
+    "Add the Kids shortcut (kids tile + 'Kids') to the header left of the profile avatar, and replace the circled chevron with a small ▲ caret",
+    "Render the active nav link inside a rounded dark-grey pill and enlarge nav text to ~18px"
+  ],
+  "summary": "The header chrome and dropdown placement match, but the menu has only 3 of the reference's 6 items, no icons, an invented caption, and a dense square-bordered style instead of the rounded, airy, icon-led panel."
+}
+```

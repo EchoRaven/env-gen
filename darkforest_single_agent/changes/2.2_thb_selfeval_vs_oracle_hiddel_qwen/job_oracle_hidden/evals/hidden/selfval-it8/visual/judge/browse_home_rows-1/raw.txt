@@ -1,0 +1,63 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The overall skeleton matches: a top nav bar with a left-aligned wordmark and nav links, utilities on the right, and stacked horizontal 16:9 rows with 5 visible cards plus a peeking 6th, using the same left gutter. Differences: the implementation is scrolled to show the bottom of a hero (Play/More Info) above the rows, while the reference starts with rows directly under the header. The first row is 'Trending Now' instead of 'TV Action & Adventure', and the vertical spacing between rows is larger (about 300px per row vs about 286px). The implementation adds left/right carousel arrow tabs and an expanded hover card. The reference shows only page-indicator bars.",
+      "fix": "Render the screen in its rows-only state, with row 1 ('TV Action & Adventure') starting about 30px below the header. Remove the hero remnant from this view, tighten the row pitch, and remove the always-visible arrow tabs."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The nav items match (7 links), and search, bell and the avatar with caret are present. The 'Kids' profile switcher (icon + label) is missing. The Home link has no pill-highlighted active state. The per-row page-indicator dash bars at top-right of each row are missing. Card overlay badges are missing (red 'New Season'/'New Episode'/'Recently Added' tags, white 'Watch Now' tag, 'TOP 10' corner badges), as are the title-art logos on cards. The 'BETA' outlined chip next to the Games heading is missing. Invented elements: Play/More Info hero buttons, an expanded hover card with action buttons and metadata, and side scroll arrows.",
+      "missing": ["Kids profile link with icon", "active pill background on Home nav item", "row page-indicator bars", "New Season/New Episode/Recently Added red card badges", "Watch Now white badge", "TOP 10 corner badges", "BETA chip on Games heading", "title-logo treatment on cards"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use a dark, flat, media-forward style with slightly rounded cards and no shadows. The reference cards have a more noticeable radius of about 6–8px. The implementation's corners look smaller. The implementation's nav is more compact and has no pill highlight.",
+      "fix": "Use about 8px corner radius on the cards and a fully rounded pill (about 44px tall, gray #333) behind the active nav item."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The near-black base (#141414), black header, white text and red wordmark all match. The reference's red badge accents (#E50914) and the purple-outlined BETA chip are missing, so the screen has less accent colour.",
+      "fix": "Add the red #E50914 badges with white text, the white Watch Now tag with black text, and the purple-bordered BETA chip."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use sans-serif type. Row titles in the reference are larger (about 26px, medium weight) than in the implementation (about 18px). Nav links in the reference are about 17px with wide spacing. The implementation's are about 13px and tightly packed.",
+      "fix": "Raise row headings to about 26px/500 and nav links to about 17px, with about 44px gaps between links."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "Search and bell outline icons match, and the 16:9 card crops match. The avatar is a purple 'V' letter tile instead of the reference's illustrated smiley avatar style, though this is minor. The Kids icon is missing. The card imagery has no title-logo overlays.",
+      "fix": "Add the Kids icon tile and use an illustrated square avatar. Overlay title-art logos on the card artwork."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels match exactly, and the 'TV Action & Adventure' and 'Games' headings match. The 'Kids' label, the BETA tag and the badge copy ('New Season', 'New Episode', 'Recently Added', 'Watch Now', 'TOP 10') are missing. 'Trending Now' appears where the reference starts with 'TV Action & Adventure'.",
+      "fix": "Add the 'Kids' label and the badge strings, and order the rows as TV Action & Adventure, Games (BETA), Only on Netflix, Top Searches."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "top of content: implementation shows hero remnant with Play/More Info buttons; reference begins directly with the 'TV Action & Adventure' row under the header",
+    "cards: reference shows red 'New Season'/'New Episode'/'Recently Added' bottom-center badges, white 'Watch Now' tags and 'TOP 10' corner badges; implementation cards have none",
+    "row 'Trending Now': implementation shows an expanded hover card with play/add/like buttons, match % and genres; reference has no expanded card",
+    "header right: reference has a 'Kids' icon + label between bell and avatar; implementation lacks it",
+    "header nav: reference Home sits in a gray pill highlight with larger, widely spaced links; implementation uses small, tight text with no pill",
+    "row headers right: reference shows page-indicator dash bars; implementation has none",
+    "Games heading: reference has an outlined 'BETA' chip; implementation has plain text",
+    "row edges: implementation shows dark left/right arrow tabs; reference does not",
+    "row titles: implementation's are noticeably smaller than the reference's (about 18px vs about 26px)"
+  ],
+  "fixes": [
+    "Remove the hero from this browse-rows state so 'TV Action & Adventure' is the first row directly under the header",
+    "Add card badges: a red #E50914 bottom-center tag ('New Season'/'New Episode'/'Recently Added'), an optional white 'Watch Now' tag beside it, and a red 'TOP 10' corner badge at top-right",
+    "Add a 'BETA' outlined chip (purple border, letter-spaced caps) after the Games heading",
+    "Add page-indicator dash bars aligned to the right edge of each row header",
+    "Add a 'Kids' icon + label to the header between the bell and the avatar",
+    "Style the active nav item with a gray pill background, and enlarge nav links to about 17px with wider gaps",
+    "Increase row heading size to about 26px medium and round the card corners to about 8px",
+    "Hide the hover-expanded card and the edge arrows in the default state"
+  ],
+  "summary": "The basic Netflix row skeleton and header are there, but the implementation adds a hero and hover card, and lacks the card badges, the TOP 10 marks, the BETA chip, the Kids link, the page indicators and the pill nav styling."
+}

@@ -1,0 +1,168 @@
+{
+ "screens": {
+  "landing": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "login": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "browse_home": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "browse_home_rows": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "shows": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "movies": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "games": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "new_and_popular": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "genre_category": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "browse_by_languages": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "my_list": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "title_detail": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "title_episodes": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "rate_dialog": {
+   "capture_missing": true,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "player": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "player_controls": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "account_menu": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "card_hover_preview": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "card_preview": {
+   "capture_missing": false,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  },
+  "shows_genres_menu": {
+   "capture_missing": true,
+   "judgments": 0,
+   "similarity_mean": null,
+   "similarity_sd": null,
+   "dimensions": [],
+   "deviations": []
+  }
+ },
+ "n_screens": 20,
+ "n_scored": 0,
+ "mean_similarity": null,
+ "below_0.55": []
+}

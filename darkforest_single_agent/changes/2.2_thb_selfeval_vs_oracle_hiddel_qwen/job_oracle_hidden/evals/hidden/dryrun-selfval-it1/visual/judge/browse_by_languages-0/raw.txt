@@ -1,0 +1,70 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "Both have a top nav bar with the logo on the left and icons on the right, a page title, and a 6-column grid. In the reference, the preference controls sit on the right of the title row: a 'Select Your Preferences' label and two dropdowns. The implementation puts underlined tabs below the title, a divider, and a small left-aligned language select. The reference grid uses landscape 16:9 tiles with a large vertical gap between rows (~80px) and no titles under them. The implementation uses tall portrait posters with caption rows.",
+      "fix": "Move the controls to the right side of the title row as a label plus two dropdowns, and remove the tabs and divider. Switch the grid tiles to 16:9 landscape with no caption rows and large vertical gaps between rows."
+    },
+    "components": {
+      "score": 0.45,
+      "missing": [
+        "'Select Your Preferences' label",
+        "Original Language / Dubbing / Subtitles dropdown (outlined box with caret, menu open)",
+        "Language dropdown with an open full language list",
+        "Expanded hover preview card (video area, title logo, mute button, play/add/rate/more circular buttons, maturity rating / runtime / HD badges, genre tags)",
+        "TOP 10 badges on tiles",
+        "'Recently Added' / 'New Season' / 'Live Now' red badges",
+        "Pill highlight on the active 'Browse by Languages' nav item",
+        "Kids profile link with icon",
+        "Profile avatar dropdown caret styling"
+      ],
+      "notes": "The implementation swaps the reference's dropdown pair for tabs plus a native select. It also adds an invented caption row (title + 'EN') under each poster. The hover preview card, the tile badges and the Kids entry are absent.",
+      "fix": "Replace the tabs with a custom dark dropdown (Original Language/Dubbing/Subtitles) and a second dropdown listing languages. Add the hover preview card, the TOP 10 and red status badges on tiles, and the Kids link. Highlight the active nav item with a pill."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat and dark with square-ish tiles. The reference dropdowns are outlined black boxes with white borders, and the active nav item is a grey pill. The implementation has a grey native select, underlined tabs, and caption text that makes the page denser.",
+      "fix": "Style the dropdowns as black boxes with a 1px white border and a white caret, with a #141414 menu panel. Use a rounded grey pill (#333-ish) for the active nav item."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Same dark #141414 base, red logo and white text. The red badge accents are missing, and the active nav pill grey is absent.",
+      "fix": "Add red (#E50914) 'Recently Added' / 'New Season' badges and red-white TOP 10 corner badges. Add the grey active nav pill."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans font. The reference has larger nav labels (~17px, regular), a lighter-weight page title (~36px regular), and larger dropdown text. The implementation's nav is small (~13px) with a bold active item, and its title is bold.",
+      "fix": "Raise nav labels to ~17px. Set the title to regular weight at ~36px. Use 18px text in the dropdowns and 15px in the menu items."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Search, bell and avatar icons match in style. The reference avatar is a blue square smiley, and the reference has a Kids icon. Reference tiles are landscape with title artwork. The implementation uses portrait posters. There are no circular outline action icons because the preview card is absent.",
+      "fix": "Use landscape backdrop images with title logos. Add the Kids icon and the rounded-square avatar."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels and the title match. The implementation is missing 'Select Your Preferences', uses 'Language' / 'All languages' where the reference uses language names such as 'English', and is missing 'Kids'.",
+      "fix": "Add the 'Select Your Preferences' label, default the dropdown to a specific language like 'English', and add the 'Kids' nav label."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Title row: the reference shows 'Select Your Preferences' plus two outlined dropdowns right-aligned (the type menu and the language list are open). The implementation shows underlined tabs under the title and a small native select on the left.",
+    "Grid: the reference uses landscape 16:9 tiles with large gaps between rows. The implementation uses tall portrait posters.",
+    "Grid: the implementation adds a title + 'EN' caption under each tile, which the reference does not have.",
+    "Tiles: the TOP 10 corner badges and the red 'Recently Added'/'New Season'/'Live Now' badges are missing.",
+    "Center: the expanded hover preview card (video, title logo, mute, play/check/thumb/chevron buttons, TV-MA/1h 34m/HD, genre tags) is absent.",
+    "Header: the reference's active nav item has a grey pill background and the nav text is larger. The implementation uses small text and bold for the active item.",
+    "Header right: the Kids icon and label are missing."
+  ],
+  "fixes": [
+    "Replace the tabs and native select with a right-aligned 'Select Your Preferences' label plus two custom black dropdowns with white borders and carets, whose menus render as dark panels.",
+    "Change the tiles to 16:9 landscape backdrops, remove the caption rows, and add large row gaps.",
+    "Add TOP 10 corner badges and red status badges on tiles.",
+    "Implement the hover-expand preview card with circular action buttons, the metadata row and genre tags.",
+    "Enlarge the nav text to ~17px, add the grey pill for the active item, and add the Kids link with its icon.",
+    "Set the page title to regular weight at ~36px."
+  ],
+  "summary": "The nav shell and dark palette match, but the preference controls are rebuilt as tabs, the tiles are portrait posters with invented captions instead of badged landscape tiles, and the hover preview card is missing."
+}

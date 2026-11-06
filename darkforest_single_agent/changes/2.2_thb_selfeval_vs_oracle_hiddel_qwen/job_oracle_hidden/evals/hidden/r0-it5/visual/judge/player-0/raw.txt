@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both are full-bleed video with no app chrome, a back arrow top-left and a control row along the bottom. The reference's top-right cluster (flag icon plus Ad countdown badge) is missing. The bottom bar is also built differently: the reference has pause and volume on the left, a centred status line and fullscreen on the right. The implementation adds a full-width scrubber with a time readout and a long row of controls on the right.",
+      "fix": "Add a top-right cluster aligned with the back arrow, containing the flag icon and the 'Ad NN' badge. In the ad state, hide the scrubber and time readout and put a centred caption in the bottom bar between the left controls and fullscreen."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present: back arrow, play/pause, volume and fullscreen. Missing: the report/flag icon, the 'Ad 12' countdown badge with a yellow left accent bar, and the centred 'begins after ads' caption. Not in the reference: progress bar, 0:00 / 0:00 time, 10-second rewind and forward, volume slider, subtitles, audio description (AD), and episodes/list buttons. The reference also shows a pause glyph (playing), while the implementation shows play.",
+      "missing": ["flag/report icon (top-right)", "Ad countdown badge with yellow accent bar (top-right)", "centered '<Title> begins after ads' caption (bottom bar)"],
+      "fix": "Render an ad-break state with: back arrow; flag icon and 'Ad 12' badge top-right; pause, volume, centred caption and fullscreen along the bottom. Remove the scrubber, time, skip buttons, volume slider, subtitles, AD and episodes buttons from this state."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are minimal, flat overlays with white icons on video and no cards. The reference is sparser and uses larger, airier controls. The implementation's dense icon row and thin slider look more utilitarian. There is no dark rounded badge surface.",
+      "fix": "Add the Ad badge as a small dark translucent box with square corners and a 4px yellow left bar. Space the bottom controls widely, as in the reference."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a dark scheme with white controls and dark letterbox bands. The reference's yellow/gold accent on the Ad badge is absent, and the implementation has no accent colour at all.",
+      "fix": "Use a gold accent (~#F5C518) for the badge's left bar on a near-black translucent background, with white text."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "The reference has a centred, medium-size sans caption and small badge text ('Ad 12'). The implementation's only text is the tiny 0:00 / 0:00 time, so the reference's text hierarchy is missing.",
+      "fix": "Add a centred caption in a regular-weight sans at ~20px, white. Set the badge as 'Ad' plus the number at ~16px, white."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The back arrow and fullscreen bracket icons are similar line icons. The reference's icons are larger and bolder, at about 40px: a thick pause bars glyph, a speaker with sound waves and a line flag. The implementation's are small (~24px), it uses a muted speaker with an X instead of waves, and it adds icons the reference doesn't have.",
+      "fix": "Enlarge the bottom icons to ~40px with a heavier stroke. Use a filled pause bars glyph, a speaker with waves and a line flag icon, and drop the extra icons."
+    },
+    "copy": {
+      "score": 0.3,
+      "notes": "The reference copy is 'Ad 12' and '<Title> begins after ads'. The implementation has neither and shows only the time readout.",
+      "fix": "Add '{title} begins after ads' to the bottom centre and 'Ad {secondsRemaining}' to the top-right badge."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference's 'Ad 12' countdown badge with yellow left bar is missing",
+    "top-right: the reference's flag/report icon is missing",
+    "bottom centre: the reference's '<Title> begins after ads' caption is missing",
+    "bottom bar: the implementation adds a full-width scrubber and a 0:00 / 0:00 time readout that the ad-state reference doesn't have",
+    "bottom left: the implementation adds 10-second rewind and forward buttons and a volume slider",
+    "bottom right: the implementation adds subtitles, AD and episodes icons next to fullscreen; the reference has only fullscreen",
+    "bottom left: the implementation shows a play glyph and a muted speaker; the reference shows pause and a speaker with sound waves, both larger",
+    "top-left: the implementation's back arrow is smaller and sits higher than the reference's"
+  ],
+  "fixes": [
+    "Add an ad-break player state shown on /watch/:id.",
+    "Top-right: add a line flag icon, then an 'Ad {n}' badge (dark background, 4px gold left bar, white text).",
+    "Bottom: show only pause and volume on the left, a centred '{title} begins after ads' caption and fullscreen on the right.",
+    "Hide the scrubber, time, skip buttons, volume slider, subtitles, AD and episodes buttons in this state.",
+    "Scale the bottom and back icons up to ~40px with heavier strokes, and use the pause glyph while playing."
+  ],
+  "summary": "The implementation shows a standard playback control bar instead of the reference's ad-break state: it lacks the Ad countdown badge, flag icon and 'begins after ads' caption, and adds many controls the reference doesn't have."
+}

@@ -1,0 +1,63 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Matches the reference: full-bleed player with no shared app chrome, back arrow top-left, full-width scrubber just above a single bottom control row, left cluster and right cluster. Differs: the top-right corner is empty where the reference has a flag icon. The centre of the bottom row is empty where the reference has a centred title lockup. The control row sits lower and tighter than in the reference, which leaves ~70px between the scrubber and the bottom edge.",
+      "fix": "Add a top-right flag (report) button mirroring the back arrow. Put a centred title lockup in the bottom row, between the left and right clusters. Raise the control row so the icons sit ~70px below the scrubber with ~40px bottom padding."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, play/pause toggle, back-10 and forward-10, volume, subtitles, fullscreen, scrubber and time. Missing: the top-right flag/report button, the centred title ('Show Ex Episode'), the next-episode button and the episodes (stacked cards) button. Invented: an inline volume slider, an 'AD' audio-description icon and a list icon, none of which the reference has. The scrubber has no red played segment, red thumb, buffered segment or chapter tick marks. The time shows 'elapsed / total' instead of the reference's single remaining-time value. Play shows instead of pause, a state difference.",
+      "fix": "Add the flag button top-right, the centred title text, a next-episode (play-with-bar) icon and an episodes (stacked-cards) icon to the left of subtitles. Remove the volume slider, the AD icon and the list icon. Give the scrubber a red fill, a red round thumb, a lighter buffered segment and small yellow chapter ticks.",
+      "missing": ["report/flag button (top-right)", "centred episode title lockup", "next-episode button", "episodes button", "red progress fill and red scrubber thumb", "buffered segment and chapter markers on the progress bar"]
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are minimal flat overlays with no containers around the controls, so the general character matches. The implementation's icons are about half the reference size (~25px vs ~45-50px), which makes the controls look sparse and web-generic rather than the reference's bold, large touch targets. The progress track is a faint hairline, while the reference's is clearer and has a visible thumb.",
+      "fix": "Scale the control icons to ~44-48px with ~40px gaps. Make the scrubber track ~4px thick with a ~16px round thumb."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "White icons on a dark background match. The brand red accent on the progress bar and thumb is missing entirely, as are the light-grey buffered segment and the yellow chapter ticks. The implementation has no red anywhere.",
+      "fix": "Colour the played part of the progress bar and the thumb in brand red (#E50914). Show the buffered part in light grey, the remainder in mid grey, and add small yellow markers."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "Time text is a small white sans in both. The reference's centred title hierarchy (bold show name + regular 'E1' + regular episode title, ~22px) is absent from the implementation. The time format also differs.",
+      "fix": "Render the centred title as a bold show name followed by regular-weight 'E{n}  {Episode title}' at ~22px white. Show the remaining time as a single value (e.g. '32:57') right of the scrubber."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use outline-style white icons. The reference's 10-second skip icons are large circular arrows with a prominent '10'; the implementation's are tiny and the '10' is illegible. The volume icon is muted with an x instead of showing sound waves. The next-episode, episodes and flag glyphs are missing, and the AD and list glyphs are extra. The overall icon scale is much smaller.",
+      "fix": "Use large (~48px) outlined skip-back/skip-forward icons with a bold '10' inside, and a volume icon with waves. Add the flag, next-episode and stacked-episodes glyphs, and remove the AD and list glyphs."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "The only chrome copy in the reference is the title lockup ('Show E1 Episode') and the remaining time. The implementation has no title, and its time reads '0:00 / 0:00' instead of a single remaining-time value.",
+      "fix": "Show '{Show} E{n}  {Episode}' in the centre of the bottom row and a single remaining-time string at the right end of the scrubber."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "bottom row centre: the reference has a centred title lockup (bold show name + episode number + episode title); the implementation has nothing there",
+    "bottom-right cluster: the reference has next-episode, episodes (stacked cards), subtitles and fullscreen; the implementation has subtitles, an extra 'AD' icon, an extra list icon and fullscreen, with no next-episode or episodes buttons",
+    "top-right: the reference has a flag/report icon; the implementation's top-right is empty",
+    "progress bar: the reference has a red played segment, a red round thumb, a lighter buffered section and yellow chapter ticks; the implementation has a plain grey hairline with no thumb or accent",
+    "bottom-left cluster: the implementation adds an inline volume slider next to the volume icon, which the reference does not have",
+    "control icons: the implementation's icons are about half the size of the reference's (~25px vs ~48px), so the '10' on the skip icons is unreadable",
+    "time label: the reference shows a single remaining time ('32:57'); the implementation shows '0:00 / 0:00'",
+    "play/pause state: the reference shows pause (playing); the implementation shows play"
+  ],
+  "fixes": [
+    "Add a centred title lockup in the bottom control row: bold show name + regular 'E{n}  {Episode title}', ~22px white",
+    "Add next-episode and episodes (stacked-cards) icon buttons to the right cluster, before subtitles, and remove the 'AD' and list icons",
+    "Add a flag/report icon button top-right, sized and inset to match the back arrow",
+    "Restyle the scrubber: ~4px track, brand-red (#E50914) played fill, ~16px red round thumb, light-grey buffered segment, small yellow chapter ticks",
+    "Remove the inline volume slider and show a volume icon with sound waves",
+    "Enlarge all control icons to ~44-48px with ~40px spacing, and use skip icons with a bold readable '10'",
+    "Change the time label to a single remaining-time value right of the scrubber",
+    "Show the pause icon when playing, so the controls overlay matches the reference's playing state"
+  ],
+  "summary": "The player skeleton is right (back arrow, scrubber, bottom control row), but the implementation lacks the centred title, next-episode, episodes and flag controls and the red progress accent, adds extra AD/list/volume-slider controls, and uses icons at about half the reference size."
+}

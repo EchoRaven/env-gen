@@ -1,0 +1,111 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_selfval/runs/netflix__r0/snapshots/iter1/workspace",
+ "tag": "selfval-it1",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 47,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 3,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 20,
+  "total": 21,
+  "failed": [
+   "the title detail and My List steps ran"
+  ]
+ },
+ "visual_captured": 17,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 2
+ },
+ "visual": {
+  "mean_similarity": 0.542,
+  "n_scored": 17,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "browse_by_languages",
+   "browse_home",
+   "landing",
+   "my_list",
+   "new_and_popular",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.5,
+   "login": 0.55,
+   "browse_home": 0.533,
+   "browse_home_rows": 0.647,
+   "shows": 0.613,
+   "movies": 0.617,
+   "games": 0.593,
+   "new_and_popular": 0.47,
+   "genre_category": 0.587,
+   "browse_by_languages": 0.517,
+   "my_list": 0.533,
+   "title_detail": 0.707,
+   "title_episodes": 0.66,
+   "rate_dialog": null,
+   "player": 0.05,
+   "player_controls": 0.577,
+   "account_menu": 0.493,
+   "card_hover_preview": null,
+   "card_preview": null,
+   "shows_genres_menu": 0.56
+  }
+ }
+}

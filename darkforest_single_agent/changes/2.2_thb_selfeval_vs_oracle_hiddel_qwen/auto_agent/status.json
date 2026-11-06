@@ -1,0 +1,53 @@
+{
+  "session_id": "96ea24d1-af17-441b-b313-6da3c6c558ac",
+  "state": "stopped_by_user",
+  "segments": [
+    {
+      "idx": 0,
+      "wall_s": 6.4,
+      "rc": 1,
+      "timed_out": false,
+      "is_error": true,
+      "finished": "2026-11-05T01:42:09"
+    },
+    {
+      "idx": 1,
+      "wall_s": 18000.2,
+      "rc": -9,
+      "timed_out": true,
+      "is_error": true,
+      "finished": "2026-11-05T07:10:05"
+    },
+    {
+      "idx": 2,
+      "wall_s": 18000.2,
+      "rc": -9,
+      "timed_out": true,
+      "is_error": true,
+      "finished": "2026-11-05T12:15:05"
+    },
+    {
+      "idx": 3,
+      "wall_s": 16405.2,
+      "rc": 1,
+      "timed_out": false,
+      "is_error": true,
+      "finished": "2026-11-05T16:53:31"
+    },
+    {
+      "idx": 4,
+      "wall_s": 3671.7,
+      "rc": 1,
+      "timed_out": false,
+      "is_error": true,
+      "finished": "2026-11-05T18:21:16"
+    }
+  ],
+  "total_segments": 5,
+  "consecutive_errors": 0,
+  "started": "2026-11-05T01:40:41-05:00",
+  "auth_method": "oauth_token",
+  "auth_email": null,
+  "stopped_at": "2026-11-05T23:21:51-05:00",
+  "stop_reason": "User requested stopping the auto-agent; existing visual evaluation is sufficient."
+}

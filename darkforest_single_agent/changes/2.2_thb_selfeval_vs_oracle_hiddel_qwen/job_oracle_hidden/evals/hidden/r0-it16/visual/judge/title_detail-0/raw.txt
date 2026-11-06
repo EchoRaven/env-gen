@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.68,
+      "notes": "Matches the reference: a centered dark modal (~1080px) over the dimmed browse page, a full-bleed hero image with the title and action row at its bottom-left, a close button top-right, then the body content and an Episodes section with the season picker on the right. Differs from the reference: the body is one column. The reference splits it into two columns, with metadata and synopsis on the left (~60%) and a Cast/Genres/This Show Is column on the right (~30%). The year/seasons metadata line also sits between the title and the buttons inside the hero. In the reference it starts the body, below the hero. Episode rows put the thumbnail first and the number second, which is the reverse of the reference.",
+      "fix": "Change the modal body to a two-column grid (left ~2fr: metadata rows + synopsis; right ~1fr: Cast/Genres/This Show Is). Move the year/seasons/HD line out of the hero and into the top of the left column. Order episode rows as number → thumbnail → text."
+    },
+    "components": {
+      "score": 0.58,
+      "notes": "Present: close X, hero title treatment, white Play button, circular + and thumbs buttons, HD badge, TV-14 badge, synopsis, Genres line, Episodes heading, season dropdown, episode rows with number, thumbnail, title, duration and description. Missing: the mute/volume circle at the bottom-right of the hero, the subtitles (CC) icon after HD, the content-advisory text next to the TV-14 badge, the Cast line with 'more', the 'This Show Is:' line, the 'Season 1: TV-14 substances, language' advisory line under Episodes, and the lighter rounded card behind the active episode row. Invented: '92% Match', '#1 in TV Shows Today', 'Rated 9.2 / 10', a '4 Seasons' label beside the dropdown, a play overlay on episode thumbnails, and divider lines between episodes.",
+      "missing": ["hero mute/volume toggle button", "subtitles/CC icon in metadata row", "maturity advisory descriptors next to rating badge", "Cast line (with 'more' link) in right column", "'This Show Is:' tag line", "season advisory line under Episodes heading ('Season 1: TV-14 …')", "highlighted card background on active episode row"],
+      "fix": "Add the hero mute button, the CC icon, the advisory text next to the rating, the Cast and This Show Is lines, the season advisory line, and the active-row card. Remove Match %, the #1 badge, 'Rated x/10', the '4 Seasons' label and the thumbnail play overlay."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same flat, dark, minimal Netflix modal language: square-ish white Play button, outlined circular icon buttons and a bottom gradient on the hero. Differences: the reference's active episode sits on a raised #2f2f2f rounded card, while the implementation uses hairline dividers. Its dropdown is a small native select, where the reference has a larger bordered box with a caret. The implementation's metadata is also tighter in vertical rhythm.",
+      "fix": "Put a rounded (~4px) #333 background on the current episode row and drop the dividers. Style the season dropdown as a ~180×46px dark box with a 1px grey border and a solid ▼ caret."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both have a near-black #181818 modal, white text, grey labels ('Genres:' in grey with white values), and a white Play button with black text. The implementation adds green (Match) and red (#1 in TV Shows) accent text that the reference doesn't have in the modal. The backdrop behind the modal is a similar dimmed overlay.",
+      "fix": "Remove the green and red accent text from the modal metadata so it stays white/grey only, as in the reference."
+    },
+    "typography": {
+      "score": 0.72,
+      "notes": "Sans-serif body type, grey-label/white-value pattern, a bold 'Episodes' heading at a similar size, and a condensed display title over the hero. The reference's body and synopsis text is a little larger (~17–18px). Its episode title and duration share one row at ~18px, with the duration top-right. The implementation's episode text is smaller, and its duration is vertically centered on the far right. The 'Play' label in the reference is larger (~22px).",
+      "fix": "Put the episode title and duration on the same baseline, with the duration right-aligned at the top. Increase episode text to ~16–18px and the Play label to ~22px."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The outline circular + and thumbs buttons, the close X in a dark circle, the play triangle, and the boxed HD/rating badges all match. Missing: the subtitles icon and the speaker/mute icon. Extra: a circular play overlay on episode thumbnails. Thumbnails in the implementation are larger (~190px wide); the reference's are ~170px with rounded corners.",
+      "fix": "Add an outline speaker-muted icon in a circle at the hero's bottom-right and a CC glyph after HD. Remove the thumbnail play overlay and give thumbnails rounded corners."
+    },
+    "copy": {
+      "score": 0.68,
+      "notes": "'Play', 'Episodes', 'Season 1', 'Genres:' and 'HD' match. Missing copy: 'Cast:', 'more', 'This Show Is:', 'Season 1:' plus advisory descriptors. Extra copy: '% Match', '#1 in TV Shows Today', 'Rated 9.2 / 10', '4 Seasons' beside the dropdown.",
+      "fix": "Add the 'Cast: … more', 'This Show Is:' and 'Season 1: [rating] [advisories]' labels, and remove the Match, ranking, rating-score and duplicate season-count labels."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "modal body: implementation is a single column; reference has a right-hand column with Cast, Genres and This Show Is lines beside the synopsis",
+    "modal body: Cast line and 'This Show Is:' line are missing (implementation shows only Genres, under the synopsis)",
+    "hero: year/HD/seasons metadata sits between the title and the buttons inside the hero; reference places it at the top of the body below the hero",
+    "hero: implementation adds '92% Match' (green) and '#1 in TV Shows Today' (red); reference has no such badges",
+    "hero bottom-right: mute/volume circular button is missing",
+    "metadata row: subtitles/CC icon after HD badge is missing; advisory descriptors next to the TV-14 badge are replaced by an invented 'Rated 9.2 / 10'",
+    "Episodes section: the 'Season 1: TV-14 substances, language' advisory line under the heading is missing; implementation adds a '4 Seasons' label next to the dropdown",
+    "episode rows: implementation puts the thumbnail before the number; reference has number → thumbnail → title",
+    "episode rows: no highlighted rounded card behind the active episode; implementation uses dividers, and the duration is vertically centered instead of top-right beside the title",
+    "episode thumbnail: implementation adds a circular play overlay the reference doesn't show",
+    "season dropdown: small native select instead of the reference's larger bordered box with a solid caret"
+  ],
+  "fixes": [
+    "Split the modal body into a two-column grid: left = metadata rows + synopsis, right = 'Cast: … more', 'Genres: …', 'This Show Is: …' (grey label, white value)",
+    "Move the 'year · N Seasons · HD · CC' line out of the hero into the top of the left column, with the rating badge + advisory text on the next line; drop Match %, the #1 badge and 'Rated x/10'",
+    "Add a circular outline mute/volume button at the bottom-right of the hero, aligned with the Play row",
+    "Under 'Episodes', add the 'Season 1: [TV-14] advisories' line and remove the '4 Seasons' label",
+    "Restyle episode rows: number → rounded thumbnail → (title + duration on one line, description below); give the active row a rounded #2f2f2f card background; remove dividers and the thumbnail play overlay",
+    "Restyle the season dropdown as a larger dark box with a 1px grey border and a solid ▼ caret"
+  ],
+  "summary": "The modal shell, hero, title treatment and action buttons are close to the reference, but the body is one column with no Cast or This Show Is lines, the badges are invented, the mute button and season advisory line are missing, and episode rows are styled differently."
+}
+```

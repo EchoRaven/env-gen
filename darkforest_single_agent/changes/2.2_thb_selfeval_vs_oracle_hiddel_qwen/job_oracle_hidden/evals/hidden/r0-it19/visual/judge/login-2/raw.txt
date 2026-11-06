@@ -1,0 +1,71 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.35,
+      "notes": "The reference has a full-width header bar with the NETFLIX wordmark at the top left (x≈213) and a hairline divider under it. Below that, a frameless form column about 490px wide sits centred around x≈716–1204 on a full-bleed gradient. At the bottom, a separate dark-grey footer band spans the full width and holds a 4-column link grid. The implementation has no header bar and no footer. Instead it puts everything inside one centred card about 450px wide, with the logo tucked inside the card. Both centre a single form column, but the page skeleton is different.",
+      "fix": "Remove the card container. Add a top header bar about 100px tall, with the NETFLIX wordmark left-aligned on the ~213px content gutter and a 1px translucent bottom border. Put the form in an unboxed column about 490px wide, centred, starting about 140px from the top. Add a full-width footer band (#161616) at the bottom with a 4-column link grid on the same gutter."
+    },
+    "components": {
+      "score": 0.35,
+      "missing": [
+        "top header bar with divider",
+        "subtitle line under the heading",
+        "floating-label email/mobile input",
+        "'Get Help' disclosure with chevron",
+        "reCAPTCHA notice line",
+        "footer phone line ('Questions? Call ...')",
+        "footer link grid (4 columns: FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)"
+      ],
+      "notes": "The reference shows a two-step flow: one identifier field (floating label 'Email or mobile number') and a 'Continue' CTA, followed by a 'Get Help' dropdown and a reCAPTCHA notice. The implementation adds a Password field the reference doesn't have. It also adds a 'New to Netflix? Sign Up Now.' line, a divider and a demo disclaimer, none of which appear in the reference. It is also missing the reference's subtitle, Get Help, the footer, and the header.",
+      "fix": "Use a single identifier input with a floating label 'Email or mobile number' and remove the password field. Change the CTA to 'Continue'. Under the CTA, add a 'Get Help' text button with a chevron-down icon, then a small grey reCAPTCHA notice. Drop the sign-up line, the divider and the demo disclaimer. Add the header and footer described under layout."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "Both are minimal, flat and dark, with a solid red full-width CTA. The reference has no card. Its form sits directly on the background, its input has a hairline grey border with about 4px radius on a translucent dark fill, and its CTA is slightly rounded. The implementation uses an elevated card panel, a square-ish CTA, and a mid-grey filled input. The reference also feels airier, with more space between groups.",
+      "fix": "Remove the card surface. Make the input background translucent near-black (rgba(22,22,22,0.7)) with a 1px rgba(128,128,128,0.7) border and 4px radius. Give the CTA a 4px radius and about 53px height, and put roughly 60px of space before Get Help."
+    },
+    "color": {
+      "score": 0.5,
+      "notes": "The reference background is a vertical gradient that starts dark maroon/burgundy at the top (#3a1a1a) and fades to black, with a #161616 footer band. The implementation uses a flat #141414 background and no warm tint. The reference CTA is a slightly lighter red-orange (#D6312A-ish), while the implementation uses a deeper Netflix red (#C11119-ish). Text is white with grey secondaries in both.",
+      "fix": "Set the page background to linear-gradient(to bottom, #3b1a1a 0%, #1a0808 45%, #000 80%). Make the footer #161616 and the CTA about #D32F27 with white bold text."
+    },
+    "typography": {
+      "score": 0.45,
+      "notes": "The reference heading is a bold (~700) sans at about 36px, left-aligned, with a ~20px regular light-grey subtitle under it. The CTA label is bold, about 20px. The implementation heading is regular weight at about 32px with no subtitle. Its CTA label is regular weight, and its input placeholders use a different system-looking font. The reference uses Netflix Sans throughout, and its footer links are underlined grey at about 16px.",
+      "fix": "Make the heading 700 weight at about 36px. Add a 20px regular subtitle in rgba(255,255,255,0.7). Make the CTA label 600–700 weight. Use the same sans for the input label (13px small floating label above 18px value). Make the reCAPTCHA text 13px grey."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Both show the red condensed NETFLIX wordmark. The reference places it larger (about 165×45) in the header, while the implementation's is smaller and sits inside the card. The reference's only icon is the chevron-down beside Get Help, and the implementation doesn't have it.",
+      "fix": "Move the wordmark into the header at about 165px wide, and add a thin line chevron-down after 'Get Help'."
+    },
+    "copy": {
+      "score": 0.3,
+      "notes": "Comparing the reference's copy with the implementation's: 'Enter your info to sign in' vs 'Sign In'. The subtitle 'Or get started with a new account.' has no counterpart. The input label 'Email or mobile number' became 'Email', and the CTA 'Continue' became 'Sign In'. 'Get Help' and the reCAPTCHA text are missing. The implementation adds 'New to Netflix? Sign Up Now.' and a demo disclaimer, neither of which is in the reference. The footer phone line and link labels are missing.",
+      "fix": "Make the heading 'Enter your info to sign in', the subtitle 'Or get started with a new account.', the input label 'Email or mobile number', and the CTA 'Continue'. Add 'Get Help' and 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Add the footer with 'Questions? Call 1-844-569-7700 (Toll-Free)' and the 8 links."
+    }
+  },
+  "similarity": 0.4,
+  "empty_state": false,
+  "deviations": [
+    "page frame: the implementation has no top header bar (reference: NETFLIX wordmark at top left with a hairline divider underneath) and puts the logo inside a card instead",
+    "bottom: the reference's full-width dark-grey footer with the phone line and 4-column underlined link grid is missing entirely",
+    "form container: the implementation wraps the form in an elevated grey card; the reference has a frameless form directly on the background",
+    "form fields: the implementation shows separate Email and Password inputs; the reference shows a single floating-label 'Email or mobile number' input",
+    "CTA: the implementation says 'Sign In' in a regular-weight label on a deeper red; the reference says 'Continue' in bold on a red-orange, slightly rounded button",
+    "under CTA: the implementation shows 'New to Netflix? Sign Up Now.', a divider and a demo disclaimer; the reference shows a 'Get Help ⌄' disclosure and a grey reCAPTCHA notice",
+    "heading block: the implementation has a regular-weight 'Sign In' and no subtitle; the reference has a bold 'Enter your info to sign in' plus the subtitle 'Or get started with a new account.'",
+    "background: the implementation is flat #141414; the reference is a maroon-to-black vertical gradient"
+  ],
+  "fixes": [
+    "Give the login route its own layout: a header bar about 100px tall with the NETFLIX wordmark (about 165px wide) left-aligned at the ~213px gutter and a 1px translucent bottom border",
+    "Remove the card. Put an unboxed form column (~490px, centred) on a background of linear-gradient(#3b1a1a → #000)",
+    "Add a bold ~36px heading 'Enter your info to sign in' and a 20px grey subtitle 'Or get started with a new account.'",
+    "Replace the email and password inputs with one floating-label input 'Email or mobile number' (translucent dark fill, 1px grey border, 4px radius, ~62px tall)",
+    "Make the CTA a full-width 'Continue' button in bold white on #D32F27 with a 4px radius",
+    "Below the CTA, add a 'Get Help' text button with a chevron-down, then 13px grey text: 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Remove the 'New to Netflix? Sign Up Now.' line, the divider and the demo disclaimer",
+    "Add a full-width #161616 footer containing 'Questions? Call 1-844-569-7700 (Toll-Free)' and a 4-column grid of underlined grey links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)"
+  ],
+  "summary": "Both are dark Netflix sign-in pages with a red CTA. The implementation is a generic card-based email/password form, while the reference has a header, a single-field 'Continue' step with Get Help and reCAPTCHA text, a maroon gradient and a full footer."
+}

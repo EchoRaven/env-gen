@@ -1,0 +1,72 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The overall structure matches. Both have a full-bleed video stage, a back arrow at top-left, a full-width scrubber near the bottom with the time at right, and a control row below it with transport controls on the left and utility controls on the right. Differences: the reference has a top-right action, but the implementation leaves that corner empty. The reference has a centred title lockup between the two control groups, and the implementation has nothing there. The implementation's control row is shorter and sits lower, its icons are packed tightly together, and there is a thin black band across the top of the frame.",
+      "fix": "Add a top-right action slot (flag icon) mirroring the back arrow. Put a centred title block in the bottom control row between the left and right groups. Give the control row ~90px of height, space the icon groups ~90px apart, and remove the black top band so the stage is truly full-bleed."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, play/pause, rewind 10, forward 10, volume, subtitles, fullscreen, scrubber and time. Missing: the report/flag button at top-right, the centred episode title, the next-episode button, and the episodes (stacked cards) button. The implementation adds a horizontal volume slider, an AD (audio description) icon and a list icon that the reference doesn't show. The scrubber has no red played segment, no buffered segment and no red thumb. The reference shows remaining time, while the implementation shows elapsed/total.",
+      "missing": [
+        "top-right report/flag icon button",
+        "centered title + episode label (bold show name, 'E1', episode title)",
+        "next episode (play-to-bar) button",
+        "episodes (stacked cards) button",
+        "red progress fill and red scrubber thumb",
+        "buffered-segment lighter track"
+      ],
+      "fix": "Add the flag button at top-right and a next-episode button plus an episodes button left of subtitles. Remove the AD icon, the volume slider and the list icon. Render the scrubber with a red played portion, a red circular thumb, a light-grey buffered portion and a dark-grey remainder."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both use flat, minimal overlay chrome with no panels or shadows, and the bare white icons sit directly on the video. The implementation is more cramped and utilitarian: its icons and spacing are about half the reference's scale, and it feels like a generic HTML5 player instead of the reference's airy, large-target layout.",
+      "fix": "Scale controls up to ~48px icons with ~45px gaps, use a thicker scrubber (~4px) with a ~16px thumb, and keep the chrome flat with no backgrounds."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both use white icons on a dark stage. The reference's one accent is the brand red on the played progress and thumb, plus small yellow chapter markers. The implementation has no red at all: its track is grey and its thumb is white (on the volume slider).",
+      "fix": "Colour the played progress and the scrubber thumb brand red (#E50914). Show the buffered segment in light grey (#BDBDBD) over a darker grey track."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "The reference has a centred title line: the show name in bold sans plus a regular-weight 'E1' and episode title at ~22px, and a small regular remaining-time label. The implementation has only a small '0:00 / 0:00' time label and no title text at all.",
+      "fix": "Add a centred title at ~22px: the show name in bold, then 'E{n}' and the episode title in regular weight, in white. Format the time label as a single remaining-time value (e.g. '32:57')."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use white line icons. The reference's are large and heavy, with a bold filled pause, circular-arrow rewind/forward icons with '10' inside, and outline volume, next, episodes, subtitles and fullscreen-corner icons. The implementation's icons are ~half that size and thin. It shows a muted-volume icon and a play triangle where the reference shows the playing state, and it adds an AD glyph and a list glyph. The flag, next-episode and episodes icons are absent.",
+      "fix": "Use ~48px icons with ~2.5px strokes. Show the pause state while playing. Use a speaker with sound waves, and the corner-bracket fullscreen icon. Add the flag, skip-next and stacked-episodes icons, and drop the AD and list icons."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The reference shows the 'Show E1 Episode' lockup and a remaining-time label. The implementation has no title copy, and its time format is elapsed/total ('0:00 / 0:00').",
+      "fix": "Render '<Show> E<n>  <Episode title>' centred in the control row, and show the remaining duration only."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "bottom control row centre: reference shows the bold show title + 'E1' + episode title; implementation has no title",
+    "bottom-right controls: reference has next-episode and episodes (stacked cards) buttons before subtitles/fullscreen; implementation instead has AD and list icons",
+    "top-right: reference shows a flag (report problem) icon; implementation corner is empty",
+    "scrubber: reference has a red played segment with a red round thumb and a light buffered segment; implementation is a plain thin grey line with no red fill or thumb",
+    "bottom-left: implementation adds a horizontal volume slider not in the reference",
+    "control sizing: implementation icons are ~half the reference size and tightly spaced; reference uses large, widely spaced icons",
+    "time label: reference shows remaining time ('32:57'); implementation shows '0:00 / 0:00'",
+    "play state/volume icons: reference shows the pause glyph and a speaker with sound waves; implementation shows a play triangle and a muted speaker",
+    "top edge: implementation has a black letterbox band above the stage"
+  ],
+  "fixes": [
+    "Add a centred title lockup in the control row: bold show name, then regular 'E{n}  {episode title}', in white at ~22px",
+    "Add next-episode and episodes buttons to the right group in the order next, episodes, subtitles, fullscreen; remove the AD and list icons",
+    "Add a top-right flag icon button aligned with the back arrow",
+    "Restyle the scrubber with a red (#E50914) played fill, a red ~16px circular thumb, a light-grey buffered segment and a dark-grey remainder; show remaining time to its right",
+    "Remove the inline volume slider and keep a single volume icon",
+    "Enlarge all control icons to ~48px with bold strokes and widen the spacing; show pause while playing",
+    "Remove the black band at the top so the video stage is full-bleed"
+  ],
+  "summary": "The skeleton matches: back arrow, bottom scrubber and transport/utility rows. But the implementation lacks the centred title, the flag, next-episode and episodes buttons, and the red progress styling, adds AD, list and volume-slider controls, and uses undersized icons."
+}
+```

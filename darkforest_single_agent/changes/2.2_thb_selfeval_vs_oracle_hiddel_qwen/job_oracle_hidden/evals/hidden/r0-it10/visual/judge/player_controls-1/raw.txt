@@ -1,0 +1,63 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The overall structure matches: a full-bleed player with no app chrome, a back arrow top-left, a full-width seek bar near the bottom with the time at its right end, and a single control row underneath (playback group on the left, utility group on the right). Differences: the reference has a centred title lockup between the two groups, but the implementation leaves the centre empty. The top-right corner has no icon, while the reference has a flag icon there. The implementation's control row is much shorter (icons about 25px against about 50px), so the bottom band reads thinner.",
+      "fix": "Add a centred title block to the control row, put a flag icon in the top-right corner level with the back arrow, and make the control row about 100px tall with about 50px icons."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, seek bar, time readout, play/pause toggle, rewind 10, forward 10, volume, subtitles, fullscreen, and a list icon that may stand in for episodes. Missing: the report flag (top-right), the red played-progress fill with a red scrubber knob and a lighter buffered segment, the centred episode title ('Show E1 Episode title'), and the next-episode icon. Invented: an inline volume slider and an 'AD' audio-description icon. The time shows elapsed/total ('0:00 / 0:00'), while the reference shows only the remaining time.",
+      "fix": "Add the flag button top-right. Style the seek bar with a red played portion, a red round knob and a light-grey buffered section. Add a centred title and a next-episode icon (play triangle with a bar). Make sure the right-side group reads next episode, episodes, subtitles, fullscreen. Remove the AD icon and the inline volume slider.",
+      "missing": ["report/flag button (top-right)", "red progress fill with scrubber knob", "buffered segment on the seek bar", "centred episode title lockup", "next-episode button"]
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both have the same flat, minimal overlay with no panels or shadows. The reference's controls are large and airy, with wide spacing between icons. The implementation's controls are small and tightly packed, and its seek bar is a thin grey line with no knob.",
+      "fix": "Make the icons about twice their current size and spread them out with gaps of about 40px. Thicken the seek bar to about 4px and add a round knob."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both use white icons on a dark base. The reference's red brand accent on the progress bar and scrubber is missing; the implementation's bar is all grey. The reference's video area is pure black. In the implementation, the artwork fills the frame and adds no darkening gradient behind the controls, so the white icons have less contrast.",
+      "fix": "Colour the played progress and the knob in brand red (#E50914), use light grey for the buffered segment and darker grey for the rest of the track, and add a bottom black gradient behind the controls."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "The time readout is a small white sans in both. The reference's centred title, with a bold show name and a regular episode label, is missing, so the second text level is gone.",
+      "fix": "Add a centred title of about 22px white sans: the show name in bold, then 'E#' and the episode title in regular weight."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "The icons are in the same white line style, and the rewind and forward icons are circular arrows. In the reference they are large with a clear '10' inside. In the implementation they are tiny and the numeral is barely legible. Muted volume, the AD icon and a hamburger-style list replace the reference's volume-with-waves and stacked-cards episodes icon. The flag and next-episode icons are missing.",
+      "fix": "Use 48–50px icons: a bold pause/play, circular-arrow 10s icons with a legible '10', a speaker with sound waves, a next-episode icon (triangle with a bar), a stacked-rectangles episodes icon, a speech-bubble subtitles icon and corner-bracket fullscreen."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The reference's chrome text is the remaining time ('32:57') and the 'Show E1 Title' lockup. The implementation shows 'elapsed / total' and has no title text.",
+      "fix": "Show only the remaining time at the right end of the seek bar, and render the title as '{Show} E{n}  {Episode title}'."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "Control row, centre: the reference's centred episode title ('Show E1 Title') is missing in the implementation",
+    "Seek bar: the reference has a red played fill, a red round scrubber and a light-grey buffered segment; the implementation's bar is a plain thin grey line with no knob or accent",
+    "Top-right: the reference's flag/report icon is missing",
+    "Right control group: the reference's next-episode icon is missing; the implementation adds an 'AD' icon and uses a hamburger list instead of the stacked-cards episodes icon",
+    "Left control group: the implementation adds an inline volume slider, which the reference does not have",
+    "Control icon scale: the reference's icons are about 50px with wide spacing; the implementation's are about 25px and tightly packed",
+    "Time readout: the reference shows the remaining time ('32:57'); the implementation shows '0:00 / 0:00'",
+    "Contrast: the implementation has no dark gradient behind the controls over the bright artwork"
+  ],
+  "fixes": [
+    "Add a centred title lockup to the bottom control row: bold show name, then a regular-weight 'E#  Episode title'",
+    "Restyle the seek bar: red (#E50914) played fill, a red round knob about 16px, light-grey buffered section, dark-grey remainder",
+    "Add a flag/report icon button in the top-right corner, level with the back arrow, and make the back arrow about 40px",
+    "Make all control icons 48–50px and space them about 40px apart",
+    "Right group: next episode, episodes (stacked cards), subtitles, fullscreen. Remove the AD icon",
+    "Remove the inline volume slider and keep a single speaker-with-waves icon",
+    "Show only the remaining time at the right of the seek bar",
+    "Add a bottom black gradient behind the controls"
+  ],
+  "summary": "The basic player layout is right (back arrow, seek bar, a control row split left and right), but it lacks the centred title, the red progress accent with its scrubber, the flag and next-episode icons, and its controls are about half the reference size; it also adds AD and volume-slider controls the reference doesn't have."
+}

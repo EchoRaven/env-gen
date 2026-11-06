@@ -1,0 +1,77 @@
+{
+ "passed": false,
+ "summary": "FAILED: docker_up",
+ "checks": [
+  {
+   "name": "frontend_navigable",
+   "status": "pass",
+   "detail": "26 page component(s), 15 route(s)",
+   "sec": 0.0
+  },
+  {
+   "name": "frontend_fallback_pages",
+   "status": "pass",
+   "detail": "0/15 pages are framework fallback ()",
+   "sec": 0.0
+  },
+  {
+   "name": "docker_up",
+   "status": "fail",
+   "detail": "Network thbval21_default Creating \n Network thbval21_default Creating \n Volume thbval21_pgdata Creating \n Volume thbval21_pgdata Creating \n Volume thbval21_pgdata Created \n Volume thbval21_pgdata Created \n Network thbval21_default Created \n Network thbval21_default Created \n Container netflix_database Creating \n service:database:1 Error response from daemon: Conflict. The container name \"/netflix_database\" is already in use by container \"b5506bdff9302ff933f85c0ecf6735f2b4e7eb81dedeaf32462a0d19a38759d4\". You have to remove (or rename) that container to be able to reuse that name. \n Container netflix_backend Creating \nError response from daemon: Conflict. The container name \"/netflix_database\" is already in use by container \"b5506bdff9302ff933f85c0ecf6735f2b4e7eb81dedeaf32462a0d19a38759d4\". You have to remove (or rename) that container to be able to reuse that name.",
+   "sec": 8.62,
+   "steps": [
+    {
+     "name": "lease_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "lock_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "stage_assets",
+     "sec": 0.01
+    },
+    {
+     "name": "repair_params",
+     "sec": 0.0
+    },
+    {
+     "name": "localize_seed",
+     "sec": 0.0
+    },
+    {
+     "name": "down_v",
+     "sec": 0.03
+    },
+    {
+     "name": "build",
+     "sec": 8.27
+    },
+    {
+     "name": "prune_orphans_1203gw",
+     "sec": 0.0
+    },
+    {
+     "name": "up",
+     "sec": 0.13
+    }
+   ]
+  }
+ ],
+ "backend_port": null,
+ "endpoints": [],
+ "chains": [],
+ "_wrapper": {
+  "framework_modified_files": [],
+  "wall_s": 9.6,
+  "metrics": {
+   "checks_passed": 2,
+   "checks_total": 3,
+   "endpoints_2xx": 0,
+   "endpoints_total": 0,
+   "chain_steps_ok": 0,
+   "chain_steps_total": 0
+  }
+ }
+}

@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.15,
+      "notes": "The implementation is a full-bleed black screen with no shared chrome, and that much matches the reference's chromeless player. Everything else is missing: there is no video frame filling the viewport, no top overlay row (back arrow top-left, flag and Ad badge top-right) and no bottom control bar (play controls left, caption centred, fullscreen right).",
+      "fix": "Render a full-viewport video element (object-fit: cover/contain) with an absolutely positioned top overlay (back arrow at ~40px left, flag + 'Ad 12' badge at the right) and a bottom overlay bar (pause + volume left, centred status text, fullscreen icon right). Keep the overlays visible in the initial or ad state instead of auto-hiding them."
+    },
+    "components": {
+      "score": 0.0,
+      "notes": "None of the reference components render. The screen is a solid black area with no video frame, no icons and no text.",
+      "fix": "Add the video surface and every overlay control: back arrow, report flag icon, ad countdown badge with a yellow left accent bar, pause button, volume button, centred 'begins after ads' caption and fullscreen toggle.",
+      "missing": [
+        "video frame / playback surface",
+        "back arrow button (top-left)",
+        "report/flag icon (top-right)",
+        "'Ad 12' countdown badge with yellow accent bar (top-right)",
+        "pause button (bottom-left)",
+        "volume button (bottom-left)",
+        "centred 'All American begins after ads' status text",
+        "fullscreen toggle (bottom-right)"
+      ]
+    },
+    "style": {
+      "score": 0.1,
+      "notes": "The minimal, flat, dark treatment is technically consistent with the reference, but the overlay styling (thin white line icons on the video, a dark translucent badge, subtle top/bottom scrims) cannot be seen.",
+      "fix": "Add subtle dark gradient scrims at the top and bottom over the video. Style the ad badge as a dark rounded-rectangle chip with a 4px yellow left border."
+    },
+    "color": {
+      "score": 0.2,
+      "notes": "The black base matches the reference's letterbox and backdrop. The white icons and text are missing, and so is the yellow/gold accent on the ad badge.",
+      "fix": "Use white (#fff) for icons and caption text, a gold/yellow (#e5b13a-ish) accent bar on the ad badge, and a translucent black badge background."
+    },
+    "typography": {
+      "score": 0.0,
+      "notes": "No text renders. The reference has a medium-size regular-weight white sans caption centred at the bottom and small 'Ad 12' badge text.",
+      "fix": "Render the centred bottom caption in a ~20px regular white sans-serif, and the badge label 'Ad' plus the countdown number in ~16px white."
+    },
+    "iconography": {
+      "score": 0.0,
+      "notes": "None of the reference's thin white outline icons render (back arrow, flag, pause, speaker with waves, fullscreen corners), and there is no video imagery.",
+      "fix": "Add white outline icons with ~2–3px stroke at ~36–48px: a left arrow, a flag, solid pause bars, a speaker with sound waves and four-corner fullscreen brackets."
+    },
+    "copy": {
+      "score": 0.0,
+      "notes": "The 'Ad' badge label and the '<Title> begins after ads' status copy are both missing.",
+      "fix": "Show 'Ad {seconds}' in the badge and '{Title} begins after ads' centred in the bottom bar."
+    }
+  },
+  "similarity": 0.05,
+  "empty_state": true,
+  "deviations": [
+    "entire viewport: the implementation is solid black with no video frame, where the reference shows a full-bleed video still",
+    "top-left: the back arrow button shown in the reference is missing",
+    "top-right: the flag/report icon and the 'Ad 12' countdown badge with yellow left accent are missing",
+    "bottom-left: the pause and volume controls are missing",
+    "bottom-centre: the 'All American begins after ads' status caption is missing",
+    "bottom-right: the fullscreen toggle icon is missing"
+  ],
+  "fixes": [
+    "Make sure the video source for /watch/:id loads and renders full-viewport, with a poster image fallback so the frame is never blank",
+    "Render the overlay controls visible by default (or during the ad state) instead of hiding them until hover",
+    "Add a top overlay row: white back arrow at left; flag icon plus dark 'Ad {n}' chip with a yellow left border at right",
+    "Add a bottom overlay row: pause and volume icons at left, '{Title} begins after ads' centred in white regular sans, fullscreen bracket icon at right",
+    "Add subtle black gradient scrims behind the top and bottom overlays for legibility"
+  ],
+  "summary": "The implementation renders only a black screen: none of the video or player overlay controls in the reference appear (back arrow, ad badge, flag, pause, volume, status caption, fullscreen), so the player design can't be judged."
+}

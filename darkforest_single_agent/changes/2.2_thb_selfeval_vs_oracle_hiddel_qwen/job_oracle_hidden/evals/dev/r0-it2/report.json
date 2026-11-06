@@ -1,0 +1,84 @@
+{
+ "passed": false,
+ "summary": "FAILED: docker_up",
+ "checks": [
+  {
+   "name": "frontend_navigable",
+   "status": "pass",
+   "detail": "26 page component(s), 15 route(s)",
+   "sec": 0.0
+  },
+  {
+   "name": "frontend_fallback_pages",
+   "status": "pass",
+   "detail": "0/15 pages are framework fallback ()",
+   "sec": 0.0
+  },
+  {
+   "name": "docker_up",
+   "status": "fail",
+   "detail": "Network thbval21_default Creating \n Network thbval21_default Creating \n Volume thbval21_pgdata Creating \n Volume thbval21_pgdata Creating \n Volume thbval21_pgdata Created \n Volume thbval21_pgdata Created \n Network thbval21_default Created \n Network thbval21_default Created \n Container netflix_database Creating \n Container netflix_database Created \n Container netflix_backend Creating \n Container netflix_backend Created \n Container netflix_frontend Creating \n Container netflix_frontend Created \n Container netflix_database Starting \n Container netflix_database Started \n Container netflix_database Waiting \n Container netflix_database Healthy \n Container netflix_backend Starting \nError response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint netflix_backend (8f5a4214c444fbd01daa64471d2c72f47c3fcf475f31be6a8b5ce601d5f1bb73): failed to bind host port 0.0.0.0:8000/tcp: address already in use\n--- container logs (tail) ---\nd with exit code 1\nnetflix_database  | 2026-11-05 20:59:07.919 UTC [49] LOG:  shutting down\nnetflix_database  | 2026-11-05 20:59:07.923 UTC [49] LOG:  checkpoint starting: shutdown immediate\nnetflix_database  | 2026-11-05 20:59:08.184 UTC [49] LOG:  checkpoint complete: wrote 1041 buffers (6.4%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.016 s, sync=0.230 s, total=0.265 s; sync files=350, longest=0.006 s, average=0.001 s; distance=4928 kB, estimate=4928 kB; lsn=0/19C2AB8, redo lsn=0/19C2AB8\nnetflix_database  | 2026-11-05 20:59:08.187 UTC [48] LOG:  database system is shut down\nnetflix_database  |  done\nnetflix_database  | server stopped\nnetflix_database  | \nnetflix_database  | PostgreSQL init process complete; ready for start up.\nnetflix_database  | \nnetflix_database  | 2026-11-05 20:59:08.235 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit\nnetflix_database  | 2026-11-05 20:59:08.235 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432\nnetflix_database  | 2026-11-05 20:59:08.235 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432\nnetflix_database  | 2026-11-05 20:59:08.247 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"\nnetflix_database  | 2026-11-05 20:59:08.262 UTC [68] LOG:  database system was shut down at 2026-11-05 20:59:08 UTC\nnetflix_database  | 2026-11-05 20:59:08.273 UTC [1] LOG:  database system is ready to accept connections\n",
+   "sec": 9.08,
+   "steps": [
+    {
+     "name": "lease_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "lock_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "stage_assets",
+     "sec": 0.01
+    },
+    {
+     "name": "repair_params",
+     "sec": 0.0
+    },
+    {
+     "name": "localize_seed",
+     "sec": 0.0
+    },
+    {
+     "name": "down_v",
+     "sec": 0.03
+    },
+    {
+     "name": "build",
+     "sec": 4.65
+    },
+    {
+     "name": "prune_orphans_1203gw",
+     "sec": 0.0
+    },
+    {
+     "name": "up",
+     "sec": 4.19
+    }
+   ]
+  }
+ ],
+ "backend_port": null,
+ "endpoints": [],
+ "chains": [],
+ "_wrapper": {
+  "framework_modified_files": [
+   "app/frontend/public/assets/video/clip_18972999.mp4",
+   "app/frontend/public/assets/video/clip_27152549.mp4",
+   "app/frontend/public/assets/video/clip_27152555.mp4",
+   "app/frontend/public/assets/video/clip_30070091.mp4",
+   "app/frontend/public/assets/video/clip_30997958.mp4",
+   "app/frontend/public/assets/video/clip_35079542.mp4"
+  ],
+  "wall_s": 10.4,
+  "metrics": {
+   "checks_passed": 2,
+   "checks_total": 3,
+   "endpoints_2xx": 0,
+   "endpoints_total": 0,
+   "chain_steps_ok": 0,
+   "chain_steps_total": 0
+  }
+ }
+}

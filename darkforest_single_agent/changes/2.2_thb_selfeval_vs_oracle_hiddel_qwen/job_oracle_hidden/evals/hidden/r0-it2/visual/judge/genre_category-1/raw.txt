@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.3,
+      "notes": "The top nav bar is in the same place in both. The reference is a full-bleed hero billboard that fills about 75% of the viewport, with the nav and a breadcrumb title laid over it, and one row of landscape (16:9) thumbnails under the hero. The implementation has no hero. It is a plain dark page with two rows of portrait poster tiles starting near the top. The rows stop at about x=1480 and leave a large empty area on the right, while the reference rows bleed off the right edge. The bottom half of the page is empty.",
+      "fix": "Add a full-bleed hero billboard about 780px tall with the transparent nav overlaid. Put the breadcrumb title at the top-left under the nav, then the title art, synopsis and buttons at the lower left. Place the first row so it overlaps the bottom of the hero, and let the rows bleed off the right edge."
+    },
+    "components": {
+      "score": 0.3,
+      "notes": "Present: nav links, search, bell, avatar with caret, row headings, and row tiles. Missing: the 'TV Shows > Sports TV Shows' breadcrumb heading, the hero title-art logo, synopsis text, the white Play and grey More Info buttons, the mute button with the TV-14 maturity flag on the right edge, the hero caption chip, the Kids profile link in the header, the selected-pill state on the active nav item, tile badges (TOP 10, Recently Added, New Season, Live Now) and row pagination dashes. Extras: an expanded hover preview card stuck open over the rows, plus odd chevron/check arrow glyphs at the row edges.",
+      "missing": ["breadcrumb heading (TV Shows > genre title)", "hero billboard with title artwork", "hero synopsis", "Play button", "More Info button", "mute toggle + maturity rating flag", "Kids profile link in header", "active nav pill highlight", "tile badges (TOP 10 / Recently Added / New Season / Live Now)", "row page-indicator dashes"]
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "Both use the same flat, dark, minimal Netflix look. The reference has a cinematic depth that comes from the hero imagery and its gradients. The implementation is flat throughout, and a hover card left open at rest adds clutter.",
+      "fix": "Add the hero with a left and bottom dark vignette gradient. Show the hover card only on hover."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both are dark with a red wordmark and white text. The reference's active nav item is a grey translucent pill, while the implementation shows it as bold white text. The reference has red badges on tiles and the implementation has none. There are no hero gradients.",
+      "fix": "Give the active nav item a rgba(255,255,255,0.2) pill background. Add red badge ribbons to tiles."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use a sans-serif family and similar weights for row titles. The implementation is missing the large breadcrumb title (about 44px) with its grey smaller 'TV Shows' prefix, as well as the hero synopsis at about 22px. Its nav text is smaller and more tightly spaced than the reference.",
+      "fix": "Add a 44px white genre title with a grey 20px breadcrumb prefix and a 22px synopsis. Increase the nav link size to about 17px with wider gaps."
+    },
+    "iconography": {
+      "score": 0.45,
+      "notes": "Search and bell outline icons match. Tiles are 2:3 portrait posters where the reference uses 16:9 landscape thumbnails with title art. The implementation has no Kids icon, uses a letter avatar rather than a smiley avatar, and shows stray check and chevron glyphs where row arrows should be.",
+      "fix": "Switch row tiles to 16:9 landscape backdrops with title art. Replace the stray glyphs with proper hover-revealed chevron arrows."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "Nav labels match. The 'TV Shows >' breadcrumb, 'Kids', 'Play' and 'More Info' are all missing. 'Home' is shown as active, but the reference highlights 'Shows'.",
+      "fix": "Render the breadcrumb 'TV Shows > {Genre}'. Add the 'Play', 'More Info' and 'Kids' labels. Set the active nav item to match the genre's category."
+    }
+  },
+  "similarity": 0.35,
+  "empty_state": false,
+  "deviations": [
+    "hero: the reference's full-bleed billboard (image, title art, synopsis, Play and More Info buttons) is completely absent in the implementation",
+    "top-left under nav: the reference's 'TV Shows > Sports TV Shows' breadcrumb title is missing; the implementation shows only a tiny stray mark",
+    "rows: the implementation uses portrait 2:3 posters, while the reference uses 16:9 landscape thumbnails",
+    "rows: the implementation's rows end at about x=1480 with empty space on the right; the reference's rows bleed off the right edge",
+    "center: a hover preview card is permanently open over both rows in the implementation",
+    "hero right edge: the mute button and TV-14 maturity flag are missing",
+    "nav: the active item is shown as bold 'Home' instead of a grey pill on the category tab, and the 'Kids' link is missing",
+    "tiles: the TOP 10, Recently Added, New Season and Live Now badges are missing",
+    "row edges: stray check and chevron glyphs appear at the far left and right"
+  ],
+  "fixes": [
+    "Build the hero billboard: full-bleed backdrop about 780px tall with left and bottom gradients, title art, synopsis, a white 'Play' button and a grey 'More Info' button.",
+    "Make the nav transparent and overlay it on the hero. Add the 'Kids' link, and give the active category a grey pill background.",
+    "Add the breadcrumb 'TV Shows > {Genre Name}' at the top-left (grey small prefix, 44px white title).",
+    "Add a mute circle button and a TV-14 maturity flag on the hero's right edge.",
+    "Change row tiles to 16:9 landscape, overlap the first row onto the hero bottom, and let rows bleed off the right edge.",
+    "Add red tile badges and the row pagination dashes.",
+    "Show the hover card only on hover, and fix the stray arrow glyphs."
+  ],
+  "summary": "The nav and dark theme match, but the implementation has no hero billboard or breadcrumb title, uses portrait tiles instead of landscape ones, and leaves a hover card stuck open, so it looks like a generic browse grid rather than the genre page."
+}

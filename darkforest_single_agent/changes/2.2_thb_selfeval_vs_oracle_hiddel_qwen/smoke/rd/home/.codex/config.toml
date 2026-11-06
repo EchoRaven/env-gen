@@ -1,0 +1,53 @@
+model = "local"
+model_provider = "localvllm"
+model_reasoning_effort = "medium"
+model_context_window = 262144
+model_auto_compact_token_limit = 220000
+model_catalog_json = "/home/agent/.codex/model_catalog.json"
+web_search = "disabled"
+check_for_update_on_startup = false
+background_terminal_max_timeout = 7200000
+
+[analytics]
+enabled = false
+
+[agents]
+enabled = false
+
+[features]
+memories = false
+goals = false
+apps = false
+plugins = false
+remote_plugin = false
+plugin_sharing = false
+recommended_plugins = false
+tool_suggest = false
+skill_mcp_dependency_install = false
+skill_search = false
+workspace_dependencies = false
+browser_use = false
+browser_use_external = false
+in_app_browser = false
+computer_use = false
+image_generation = false
+realtime_conversation = false
+guardian_approval = false
+daemon_auto_start = false
+api_key_model_discovery = false
+api_key_cyber_access_programs = false
+
+[skills]
+include_instructions = false
+
+[skills.bundled]
+enabled = false
+
+[model_providers.localvllm]
+name = "localvllm"
+base_url = "http://127.0.0.1:8000/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+stream_idle_timeout_ms = 3600000
+stream_max_retries = 20
+request_max_retries = 20

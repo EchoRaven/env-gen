@@ -1,0 +1,70 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "Both screens have the same top nav bar, a left-aligned page title and a full-width grid of titles. The differences: the reference puts 'Select Your Preferences' and two dropdowns on the same row as the title, right-aligned. The implementation puts three large preference cards in their own full-width band below the title. The reference grid has 6 columns of landscape 16:9 tiles with large vertical gaps between rows and no captions. The implementation has 10 columns of portrait 2:3 posters with captions underneath. The reference also leaves more space between the title row and the grid.",
+      "fix": "Delete the three-card band. Put 'Select Your Preferences' and two dropdowns on the right end of the title row. Change the grid to 6 columns of 16:9 landscape tiles with about 8px horizontal gaps and about 80px between rows."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The nav, search icon, bell, profile avatar and caret are all present. The reference has two dropdowns: a mode selector (Original Language / Dubbing / Subtitles) and a language selector (an alphabetical list). The implementation has three separate native selects, each with a heading and helper text. The 'Browse by Languages' nav item has no pill highlight. The tiles have none of the reference's badges: 'TOP 10' corner badge, 'Recently Added' / 'New Season' / 'Live Now' red pill labels. The 'Kids' profile link next to the avatar is missing. The reference's hover preview card is missing: enlarged artwork, play / add / rate / expand buttons, maturity rating, runtime, HD badge and genre tags. The implementation adds caption text under each tile, which the reference doesn't have.",
+      "missing": [
+        "Mode dropdown (Original Language/Dubbing/Subtitles) as a single selector",
+        "Language dropdown with alphabetical language list",
+        "'Select Your Preferences' label",
+        "Active pill highlight on 'Browse by Languages' nav item",
+        "Kids profile link in header",
+        "TOP 10 corner badges on tiles",
+        "Red status pills on tiles (Recently Added / New Season / Live Now)",
+        "Hover preview card with play/add/rate/expand buttons, rating, runtime, HD badge, genre tags"
+      ],
+      "fix": "Replace the three cards with two custom dropdowns: mode and language. Add a rounded pill background on the active nav item. Add a 'Kids' link with its icon before the avatar. Add the TOP 10 badge and the red bottom-centre status pills to the tiles. Add a hover-expand preview card with the action buttons and metadata row. Remove the caption text under tiles."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both use a flat, dark, Netflix-like look with slightly rounded tile corners. The implementation's preference cards are lighter grey rounded panels that make the screen look like a form, which the reference doesn't have. The reference's dropdowns are sharp-edged black boxes with a white hairline border and a solid caret. The implementation uses native rounded browser selects. The reference's active nav item is a grey rounded pill.",
+      "fix": "Style the dropdowns as black boxes with a 1px white border, square corners and a white solid caret. Remove the card panels. Add a grey pill (rgba(255,255,255,0.2)) behind the active nav item."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The dark #141414 background, white text and red Netflix wordmark all match. The implementation is missing the red accent pills and badges on the tiles. Its grey card surfaces are an extra mid-tone that the reference doesn't use. The reference's open dropdown menus are near-black.",
+      "fix": "Remove the grey card surfaces. Use black for the dropdowns and their menus. Add the red (#E50914) status pills and TOP 10 badges."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a sans-serif. In the reference the title is regular weight at about 36px and the nav text is about 17px. In the implementation the title is bold and the nav text is smaller (about 14px). Its active nav item and 'Home' are both bold. The implementation also adds helper-text and caption levels that the reference doesn't have.",
+      "fix": "Set the page title to regular weight. Increase nav text to about 17px. Only the active item should get semibold weight; 'Home' should not be bold. Remove the helper text and the tile captions."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "The outline search and bell icons match. The reference avatar is a blue smiley rounded square; the implementation shows a letter avatar, which is acceptable. The main problem is the artwork: the reference uses landscape 16:9 thumbnails with the title logo on them, and the implementation uses portrait posters. The reference also has a Kids icon and the circular outline icons in the hover card, which the implementation lacks.",
+      "fix": "Use 16:9 backdrop images with the title-logo treatment instead of portrait posters. Add the Kids icon and the circular outline action icons for the preview card."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "The nav labels and the 'Browse by Languages' title match. The implementation adds copy the reference doesn't have: helper sentences, and default options such as 'All original languages'. The 'Select Your Preferences' label is missing. The reference's dropdowns default to 'Original Language' and a specific language ('English').",
+      "fix": "Add the 'Select Your Preferences' label. The mode dropdown should default to 'Original Language' and the language dropdown should default to a specific language. Remove the helper sentences."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Preference controls: the reference has a 'Select Your Preferences' label and two black hairline-bordered dropdowns (mode + language) on the right end of the title row. The implementation has three large grey cards (Original Language / Dubbing / Subtitles), each with helper text and a native select, in a full-width band below the title.",
+    "Title grid: the reference shows 6 columns of landscape 16:9 tiles with wide gaps between rows. The implementation shows 10 columns of portrait posters packed tightly.",
+    "Tiles: the implementation shows caption text under every tile, which the reference doesn't have. It also lacks the reference's TOP 10 corner badges and the red 'Recently Added' / 'New Season' / 'Live Now' pills.",
+    "Hover preview card: the reference shows an expanded card with play / check / thumbs / expand buttons, TV-MA, runtime, HD and genre tags. The implementation has nothing like it.",
+    "Header: the reference highlights 'Browse by Languages' with a grey pill. The implementation only bolds it, and also bolds 'Home'.",
+    "Header right: the reference has a 'Kids' icon and label before the avatar. The implementation doesn't.",
+    "Page title: the reference uses regular weight. The implementation uses bold."
+  ],
+  "fixes": [
+    "Replace the three preference cards with a right-aligned row on the title line: the 'Select Your Preferences' label, a mode dropdown (Original Language / Dubbing / Subtitles) and a language dropdown (alphabetical list), styled as black boxes with a white 1px border and a solid caret.",
+    "Change the grid to 6 columns of 16:9 landscape backdrop tiles with title-logo art, no captions, and about 80px vertical spacing between rows.",
+    "Add the TOP 10 corner badges and the red bottom-centre status pills to the tiles.",
+    "Add a hover-expand preview card with play / add / rate / expand buttons, a mute button, the rating / runtime / HD row and genre tags.",
+    "Give the active nav item a rounded grey pill and stop bolding 'Home'. Increase nav text to about 17px.",
+    "Add the 'Kids' link with its icon before the avatar.",
+    "Set the page title to regular weight."
+  ],
+  "summary": "The Netflix chrome and dark theme match, but the preference controls are rebuilt as three form cards instead of two inline dropdowns, the grid uses captioned portrait posters instead of landscape tiles, and the TOP 10 / status badges and the hover preview card are missing."
+}

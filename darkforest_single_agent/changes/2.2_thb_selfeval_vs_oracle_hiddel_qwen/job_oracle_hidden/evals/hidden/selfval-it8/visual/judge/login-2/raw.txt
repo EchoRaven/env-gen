@@ -1,0 +1,69 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "What matches: the logo sits top-left, and a form column about 490px wide is centred on a dark maroon-to-black gradient. What differs: the reference has a hairline divider under the header band (y≈100) and a separate #141414 footer band starting at y≈905. That footer holds a phone line and a 4-column grid of underlined links. The implementation has neither: there is no header divider and no footer band, only two small text lines bottom-left and a language select bottom-right. In the reference the heading and subtitle are left-aligned to the form's left edge. The implementation centres them and starts the form lower (heading at y≈205, not y≈160).",
+      "fix": "Add a 1px rgba(255,255,255,.1) divider under the header at about 100px. Left-align the heading and subtitle to the 716px form edge and start the heading at about y=160. Add a full-width #161616 footer band from y≈905 with 'Questions? Call…' and a 4-column grid of links, left-aligned to the logo column (x≈213)."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present: logo, a single text input, and a full-width red primary button. The reference input is a floating-label field ('Email or mobile number' as a small label with the value below it). The implementation uses a plain placeholder input. Missing: the 'Get Help' disclosure with chevron, the reCAPTCHA notice, and the footer (phone line plus 8 underlined links). Invented, with nothing like them in the reference: an 'or' divider, a password field, an outlined 'Continue with password' button, 'Forgot password?', 'New to Netflix? Sign up now.', the bottom-left 'Don't have an account? / Used to have Netflix?' lines, and the 'English' language select.",
+      "fix": "Remove the password field, the 'or' divider, the outline button, Forgot password, the sign-up lines and the language select. Turn the input into a floating-label field. Below the button add 'Get Help ⌄', then the gray reCAPTCHA notice, then the footer link grid.",
+      "missing": [
+        "Floating-label email/mobile input",
+        "'Get Help' dropdown toggle with chevron",
+        "reCAPTCHA notice text",
+        "Footer band with phone line",
+        "Footer 4-column underlined link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)",
+        "Header divider line"
+      ]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "What matches: a flat, minimal dark treatment with a slightly rounded input and button (about 4px) and a hairline gray input border. What differs: the implementation adds extra structure (an 'or' rule, an outlined secondary button) and has no distinct footer surface. The reference keeps the form section sparse and puts its density in the footer.",
+      "fix": "Keep the 4px radii. Drop the outline button and divider. Add the flat #161616 footer surface."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use a dark maroon top gradient fading to black. The reference CTA is a slightly warmer, softer red (#D3302A-ish). The implementation uses saturated #E50914. The implementation's lower page fades to #141414 gray with no band contrast. The reference fades to pure black, with a lighter gray footer band below it. The reference input fill is slightly darker and translucent; the implementation's is similar.",
+      "fix": "Set the CTA to about #D6312B. Fade the gradient to #000 by about y=800, then add the #161616 footer band. Use gray #B3B3B3 for the reCAPTCHA and footer text."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "Both use a sans font, and the wordmark matches. The reference heading is a bold, left-aligned display weight at about 36px. The implementation's heading is light/regular weight and centred. The reference subtitle is about 20px light gray. The implementation's subtitle is a tiny 13px centred caption. The reference button label is bold at 20px; the implementation's is semibold at about 18px. The implementation also lacks the floating-label small/large text pair.",
+      "fix": "Heading: 36px, weight 700, left-aligned. Subtitle: 20px, regular, #BBB, left-aligned. Button label: 20px bold. Input: 13px label over 18px value."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The red NETFLIX wordmark is rendered correctly, slightly smaller in the implementation. The chevron-down icon next to 'Get Help' is missing. The implementation shows a ▾ glyph in the language select, which the reference does not have.",
+      "fix": "Enlarge the logo to about 165×45px. Add a line chevron-down icon after 'Get Help'."
+    },
+    "copy": {
+      "score": 0.25,
+      "notes": "The reference copy is: heading 'Enter your info to sign in', subtitle 'Or get started with a new account.', label 'Email or mobile number', CTA 'Continue', 'Get Help', and the reCAPTCHA line. The implementation instead has 'Sign in to your account', 'Don't worry, we'll protect your privacy.', 'Email', 'Sign In', 'Continue with password' and other strings the reference does not contain.",
+      "fix": "Replace the copy with the reference strings exactly. Add the footer copy 'Questions? Call 1-844-569-7700 (Toll-Free)' and the 8 link labels."
+    }
+  },
+  "similarity": 0.48,
+  "empty_state": false,
+  "deviations": [
+    "Bottom of page: the reference has a full-width dark-gray footer band with a phone line and a 4-column underlined link grid. The implementation has only two small sign-up lines bottom-left and a language select bottom-right.",
+    "Form area: the implementation adds an 'or' divider, a Password field, an outlined 'Continue with password' button, 'Forgot password?' and 'New to Netflix? Sign up now.' None of these are in the reference.",
+    "Below the CTA: the reference's 'Get Help ⌄' toggle and gray reCAPTCHA notice are missing.",
+    "Heading block: the reference heading is bold and left-aligned with a 20px subtitle. The implementation's heading is light-weight and centred, with a tiny centred caption, and sits about 45px lower.",
+    "Input: the reference uses a floating label ('Email or mobile number' above the value). The implementation uses a plain 'Email' placeholder.",
+    "CTA: the label reads 'Sign In' instead of 'Continue', and the red is more saturated (#E50914 vs a softer #D3302A).",
+    "Header: the hairline divider below the logo band (reference y≈100) is missing.",
+    "Bottom right: a language select ('English ▾') is present that the reference does not show."
+  ],
+  "fixes": [
+    "Delete the 'or' divider, password input, 'Continue with password' button, 'Forgot password?', 'New to Netflix? Sign up now.', the bottom-left sign-up lines and the language select.",
+    "Change the heading to 'Enter your info to sign in' (36px bold, left-aligned) and the subtitle to 'Or get started with a new account.' (20px, #BBB, left-aligned). Start the heading at about y=160.",
+    "Make the input a floating-label field with the label 'Email or mobile number'. Rename the CTA to 'Continue' (20px bold, bg about #D6312B, 4px radius).",
+    "Below the CTA add 'Get Help' with a chevron-down icon (white, 18px), then 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' in 14px gray.",
+    "Add a 1px translucent divider under the header at y≈100.",
+    "Add a #161616 footer band from about y=905: 'Questions? Call 1-844-569-7700 (Toll-Free)', then a 4-column grid of underlined gray links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information), left-aligned with the logo.",
+    "Fade the background gradient to pure black above the footer."
+  ],
+  "summary": "The implementation gets the dark Netflix shell and centred form column right, but it shows an invented email+password flow with the wrong copy and centred light heading, and is missing the reference's Get Help toggle, reCAPTCHA note, header divider and footer link band."
+}

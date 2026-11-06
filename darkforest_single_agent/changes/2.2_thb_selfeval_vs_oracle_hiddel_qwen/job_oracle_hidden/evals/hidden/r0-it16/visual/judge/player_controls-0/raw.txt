@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The skeleton matches. The video fills the full screen with no app chrome, there's a back arrow top-left, a full-width scrubber near the bottom with the time on the right, and one control row underneath: transport controls on the left, utility controls on the right. Three differences: the centre of the control row is empty where the reference shows the title, the top-right corner has nothing in it, and there's a thin black strip across the top edge of the implementation.",
+      "fix": "Put a centred title lockup in the middle of the control row. Add a top-right flag/report icon to mirror the back arrow. Remove the top black strip so the video runs edge to edge."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, scrubber, time readout, play/pause, skip back 10, skip forward 10, volume, subtitles and fullscreen. Missing compared with the reference: the top-right flag/report icon, the centred episode title, the next-episode button, the episodes icon (two stacked rectangles), the red played-progress fill with its round red thumb, the buffered segment and the chapter tick marks. Added controls the reference doesn't have: an inline volume slider and an AD (audio description) badge. There's also a list/hamburger icon that doesn't match the reference's episodes glyph.",
+      "missing": ["top-right flag/report icon", "centred episode title lockup (bold show name + episode number + episode title)", "next-episode button (play triangle with bar)", "episodes icon (stacked rectangles)", "red progress fill with circular red scrubber thumb", "buffered-progress segment and chapter tick marks"],
+      "fix": "Add a flag icon top-right, a centred title text, and next-episode and episodes icons to the left of subtitles. Show played progress in red with a red dot thumb and a lighter grey buffered segment. Remove the volume slider and the AD badge."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both are minimal and flat: white glyphs over the video with no panels or shadows. The reference is airier, though, with large controls (~50px) spaced widely apart. The implementation's controls are small (~24px) and packed close together, so it reads denser and more like a web-player utility.",
+      "fix": "Make control icons about 48px with roughly 40px gaps, and make the scrubber track a bit thicker (~4px)."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both use white controls over a dark field. The reference's one brand accent, the red progress fill and thumb, is gone. The implementation's progress bar is all grey.",
+      "fix": "Colour the played portion of the progress bar and the thumb Netflix red (#E50914). Make the buffered portion light grey and the remaining track dark grey."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "The time readout is a small white sans in both, but the reference shows remaining time ('32:57') and the implementation shows elapsed/total ('0:00 / 0:00'). The centred title is missing, so its typographic pair (bold show name, regular episode text) is missing too.",
+      "fix": "Show remaining time only, right of the scrubber. Add a centred title: bold show name followed by a regular 'E# Episode title' at ~20px."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use white line icons. The reference's are large and bold, with '10' circular arrows, a three-wave speaker, a thick pause glyph, stacked-card episodes and a corner-bracket fullscreen. The implementation's are much smaller and thinner: the '10' arrows are tiny, the volume glyph is crossed/muted, and there's an extra AD badge and hamburger. The back arrow is smaller too, and the flag icon isn't there.",
+      "fix": "Scale icons up to about 48px with a heavier stroke, and use Netflix-style glyphs: back-10/forward-10 circular arrows, a speaker with waves, next-episode, stacked episodes, a speech-bubble subtitles icon and corner-bracket fullscreen. Add the flag icon."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "There's very little UI copy. The time format differs ('0:00 / 0:00' vs a remaining-time countdown), and the title line ('Show E# Title') is missing.",
+      "fix": "Show remaining time as 'MM:SS' and add the 'Show E# Episode title' line."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "Bottom control row, centre: the reference has a 'Show E1 Episode' title lockup; the implementation's centre is empty",
+    "Bottom control row, right: the next-episode and episodes (stacked cards) icons are missing; the implementation shows an AD badge and a hamburger list icon instead",
+    "Progress bar: the reference has a red played fill, a red circular thumb, a lighter buffered segment and chapter ticks; the implementation has a plain thin grey line with no thumb",
+    "Top-right corner: the reference's flag/report icon is missing",
+    "Control sizing: the implementation's icons are about half the reference's size and much more tightly spaced",
+    "Volume: the implementation adds an inline slider next to the speaker icon that the reference doesn't have",
+    "Time readout: the implementation shows '0:00 / 0:00' (elapsed/total) where the reference shows a single remaining time",
+    "Top edge: the implementation has a thin black strip above the video; the reference runs full-bleed"
+  ],
+  "fixes": [
+    "Restyle the scrubber: red (#E50914) played fill with a ~16px red round thumb, light grey buffered segment, dark grey remaining track",
+    "Add a centred title in the control row: bold show name plus regular 'E# Episode title'",
+    "Add next-episode and episodes icons left of subtitles; remove the AD badge and the hamburger icon",
+    "Remove the inline volume slider and keep the speaker icon only",
+    "Scale all control icons to about 48px with wider spacing; enlarge the back arrow",
+    "Add a flag/report icon in the top-right corner",
+    "Show remaining time ('MM:SS') at the right end of the scrubber",
+    "Remove the black strip at the top so the video is full-bleed"
+  ],
+  "summary": "The full-bleed player skeleton is right, but the centred title, next-episode/episodes icons, flag icon and red progress styling are missing, and the controls are undersized and include extra volume-slider and AD controls."
+}
+```

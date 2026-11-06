@@ -1,0 +1,78 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both have a top nav over a full-bleed hero, then a row carousel, and the left gutters line up. The differences: the reference puts the 'TV Shows' title and Genres dropdown at the top-left directly under the nav, but the implementation moves them below the hero above the row. The reference hero ends at about 75% of the viewport and the row peeks in at about 830px. The implementation hero runs to about 850px and pushes the row lower. The reference has a mute button and a rating tab hugging the right edge; the implementation puts the rating inline after the buttons. The reference's row-pagination indicator sits top-right of the row and is missing.",
+      "fix": "Move the 'TV Shows' heading and Genres dropdown to sit just below the nav at the top-left (y≈125px), overlaid on the hero. Shorten the hero so the first row's title starts around 75% of the viewport height. Put a mute circle button and a TV-MA tab with a left border flush against the right edge, level with the CTAs."
+    },
+    "components": {
+      "score": 0.55,
+      "missing": [
+        "mute/volume toggle circle button on hero right",
+        "maturity rating tab flush to the right edge (with a left border bar)",
+        "Top 10 badge + '#1 in TV Shows Today' line",
+        "title-artwork logo lockup with small NETFLIX series wordmark above",
+        "Kids profile link in header",
+        "active pill highlight on 'Shows' nav item",
+        "TOP 10 corner badges on row cards",
+        "red 'New Season'/'Recently Added'/'New Episode' banners on cards",
+        "row pagination indicator dashes",
+        "landscape 16:9 boxart cards"
+      ],
+      "notes": "The nav items match (7), and so do search, bell, avatar with caret, Play and More Info, the Genres dropdown and the row. The implementation invents a '92% Match 2026' metadata line, which the reference doesn't have. Its Genres dropdown is a native-styled select, not the reference's black box with a white border and caret. Its cards have no badges.",
+      "fix": "Add the Kids link next to the avatar, a pill background on the active nav item, the Top-10 badge + rank line, the mute button and the edge rating tab. Remove the Match/year line. Add TOP 10 corner badges and red bottom-center status banners to the cards. Restyle Genres as a black box with a 1px white border and a white triangle caret."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both are dark and cinematic with a hero gradient and square buttons, so the look is similar. But the implementation dims the whole hero image heavily, while the reference keeps it bright with a vignette only on the left and bottom. The reference has a pill on the active nav item and badges on the cards; the implementation's cards are plain portrait tiles with no gaps or treatments.",
+      "fix": "Lighten the hero overlay to a left-to-right gradient plus a bottom fade, leaving the right of the image at full brightness. Give the active nav item a translucent grey pill."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "The Netflix red, white Play button, grey translucent More Info button and #141414 base all match. The implementation's hero is much darker and more muted. It adds a green 'Match' accent the reference lacks, and it's missing the red badge and banner accents on the cards.",
+      "fix": "Reduce the hero dimming, remove the green match text, and add red TOP 10 and status banners on the cards."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans UI font and white text. The reference nav labels are larger (about 18px), while the implementation's are about 14px. The reference 'TV Shows' is a large light-weight title (about 44px), while the implementation's is smaller and bold. The reference description is larger (about 22px) with a text shadow. The row title 'Today's Top Picks for You' is about 26px regular in the reference and smaller and bolder in the implementation.",
+      "fix": "Set the nav at about 18px, the 'TV Shows' title at about 44px regular, the hero synopsis at about 22px with a text shadow, and the row title at about 26px medium."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "The search, bell and play/info icons match in style. The reference row uses landscape 16:9 boxart with title art baked in and small gaps between cards; the implementation uses tall portrait posters. The implementation also replaces the hero's title-art lockup with plain condensed text. The reference avatar is a blue square smiley; the implementation's is a green letter tile, which is acceptable. The Kids icon and the mute icon are missing.",
+      "fix": "Switch the row cards to roughly 290×165 landscape images with about 8px gaps. Render the hero title as a logo image with a small red NETFLIX wordmark above it. Add the Kids icon and the mute icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels, 'TV Shows', 'Genres', 'Play' and 'More Info' match. The row heading reads 'Today's Top Picks' where the reference has 'Today's Top Picks for You'. The implementation is missing the 'Kids' label and the '#1 in TV Shows Today' line.",
+      "fix": "Rename the row to 'Today's Top Picks for You', and add the 'Kids' label and the '#1 in TV Shows Today' line."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "page header: the 'TV Shows' heading and Genres dropdown appear below the hero in the implementation; the reference places them top-left directly under the nav",
+    "row cards: the implementation uses tall portrait posters; the reference uses landscape 16:9 boxart with TOP 10 corner badges and red status banners",
+    "hero: the reference's Top-10 badge + '#1 in TV Shows Today' line is missing; the implementation adds a '92% Match 2026' line instead",
+    "hero right edge: the mute circle button and TV-MA rating tab are missing; the implementation shows a small bordered TV-14 next to the buttons",
+    "hero title: plain condensed text instead of a title-artwork logo with a small NETFLIX wordmark above",
+    "hero height: the implementation hero is taller and the first row starts lower than the reference's (about 830px)",
+    "hero image: the implementation dims the whole image heavily; the reference keeps it bright with only a left and bottom vignette",
+    "header: the 'Kids' profile link is missing, and the active 'Shows' item lacks the pill highlight",
+    "header: the nav text is noticeably smaller than the reference",
+    "Genres dropdown: a native-looking select in the implementation; the reference uses a black box with a white border and caret",
+    "row title copy: 'Today's Top Picks' instead of 'Today's Top Picks for You'"
+  ],
+  "fixes": [
+    "Move the 'TV Shows' title (about 44px regular) and the Genres dropdown (black box, white border, caret) to the top-left under the nav, overlaid on the hero",
+    "Change the row cards to landscape 16:9 boxart about 290px wide with about 8px gaps, with TOP 10 red corner badges and red bottom-center status banners",
+    "Replace the Match/year line with a TOP 10 badge + '#1 in TV Shows Today' line, and render the hero title as a logo image with a small NETFLIX wordmark above",
+    "Add a circular mute button and a right-edge rating tab (left border, translucent background) level with Play/More Info, and remove the inline TV-14",
+    "Shorten the hero to about 75% of the viewport and lighten the overlay to a left and bottom gradient only",
+    "Header: enlarge the nav to about 18px, add a pill background on the active item, and add a Kids icon + label before the avatar",
+    "Rename the row to 'Today's Top Picks for You' at about 26px, and add a row pagination indicator at the top-right"
+  ],
+  "summary": "The Netflix nav, hero and row skeleton are there, but the 'TV Shows' header is in the wrong place, the cards are portrait with no badges, and the hero is missing its Top-10 line, title-art logo, mute button and edge rating tab, so the match is only partial."
+}
+```

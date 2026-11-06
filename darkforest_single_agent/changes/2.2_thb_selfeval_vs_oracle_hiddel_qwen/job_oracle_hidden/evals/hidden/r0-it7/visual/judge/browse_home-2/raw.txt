@@ -1,0 +1,64 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both use a top nav with the logo on the left, links, and icons on the right, followed by a hero and then a row carousel. In the reference, the hero is an inset card with rounded corners (about 67px side margins, starting below a solid nav band at about y=97) on a dark gradient page. The implementation uses an old-style full-bleed hero that runs behind a transparent nav. The reference row has 5 wide landscape tiles; the implementation has about 11 narrow portrait posters. The reference also has a pagination indicator at the right of the row header, which the implementation lacks.",
+      "fix": "Put the nav in its own band (about 97px) above the hero. Render the hero as an inset card with about 67px horizontal margins and a radius of about 24px. Use 16:9 landscape tiles for the rows, about 350px wide with 5 visible, plus a segmented page indicator aligned right on the row title line."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: logo, 7 nav links, search, bell, profile avatar with caret, hero title, Play and More Info buttons, and a row with a title. Missing: pill highlight on the active Home tab, the Kids profile switch (icon plus 'Kids' label), the mute/sound button in the hero's top-right, the LIVE badge with status line, the dot-separated metadata row (genre • year • seasons • rating), the 'New Episode' tag at bottom-right, the row pagination dashes, and Top 10 / network badges on the tiles. Added: a '92% Match' label, a synopsis paragraph, and a boxed maturity rating next to the buttons. The 'Browse by Languages' nav link is unreadable because it overlaps the artwork.",
+      "missing": ["active-tab pill highlight on Home", "Kids profile switcher (icon + label)", "hero mute/volume circular button", "LIVE badge + status text line", "dot-separated metadata row (genre • year • seasons • rating)", "'New Episode' tag bottom-right of hero", "row pagination indicator", "Top 10 / network badges on tiles"]
+    },
+    "style": {
+      "score": 0.45,
+      "notes": "The reference is a modern, rounded design: the hero card is rounded, Play and More Info are pills, the active nav item is a pill, and the tiles have rounded corners. The implementation uses square buttons with slight rounding, square poster tiles, a full-bleed hero with no card, and an outlined rating box.",
+      "fix": "Make Play and More Info full pill buttons (Play white, More Info translucent gray). Round the hero card corners by about 24px and the tile corners by about 8px. Add a translucent gray pill behind the active nav item. Remove the outlined rating box."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both are dark themes with a red wordmark, a white Play button, and a gray secondary button. The reference has a warm gray-brown gradient page background behind the card and a red LIVE badge. The implementation adds a green 'Match' accent and uses a flat black page.",
+      "fix": "Use a dark warm-gray gradient for the page background (lighter at the top, about #3a3835, fading to #181818). Remove the green match text. Use red only for the LIVE badge and the logo."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans-serif UI font. Reference nav labels are larger (about 18px) with wide spacing; the implementation's are small (about 15px) and cramped. The reference row title is large and bold (about 28px); the implementation's is smaller (about 22px). The reference has a semibold metadata row and a bold status line, while the implementation uses a regular-weight synopsis paragraph.",
+      "fix": "Set nav links to about 18px with about 44px gaps. Set row titles to about 28px semibold. Add a bold status line of about 22px and a metadata row of about 18px medium with • separators."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Outline search and bell icons match. The reference has a square blue smiley profile avatar plus a colorful Kids icon; the implementation shows a lettered green avatar. The reference tiles are landscape backdrops with title art and badges; the implementation tiles are portrait posters. The More Info button in the implementation adds an info icon, which the reference does not have. The reference hero uses a graphic title-logo treatment; the implementation uses a text-style title.",
+      "fix": "Switch tiles to landscape 16:9 crops with rounded corners. Remove the info icon from More Info. Add a circular outlined mute icon to the hero and a square Kids icon next to the profile."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), and so do the Play and More Info labels. Missing: the 'Kids' label, the 'New Episode' tag, and the LIVE status text. Added: the '% Match' label and a synopsis.",
+      "fix": "Add a 'Kids' label next to the Kids icon and a 'New Episode' tag. Remove the '92% Match' label and the synopsis paragraph."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "hero: the reference is an inset card with rounded corners and page margins, below the nav; the implementation is a full-bleed hero running behind a transparent nav",
+    "content row: the reference uses about 5 wide landscape tiles with rounded corners; the implementation uses about 11 narrow portrait posters",
+    "hero buttons: the reference has pill-shaped Play and More Info buttons; the implementation has square buttons, and More Info has an added info icon",
+    "hero info block: the reference shows a LIVE badge, a status line, and a dot-separated metadata row; the implementation shows '92% Match', a year, a synopsis paragraph, and a boxed TV-14 rating",
+    "nav: the reference highlights the active Home tab with a gray pill; the implementation shows Home only as white text",
+    "nav right: the Kids icon and 'Kids' label from the reference are missing; the profile avatar style differs",
+    "hero top-right: the circular mute button is missing",
+    "hero bottom-right: the 'New Episode' tag is missing",
+    "row header: the segmented pagination indicator at right is missing",
+    "nav links are smaller and more tightly spaced than the reference; 'Browse by Languages' is illegible against the hero art",
+    "page background: the reference has a warm gray gradient around the hero card; the implementation is flat black"
+  ],
+  "fixes": [
+    "Render the nav as its own band, then the hero as an inset card (about 67px side margins, radius about 24px) on a dark warm-gray gradient page",
+    "Change the row tiles to 16:9 landscape cards, about 350px wide with rounded corners and 5 visible, and add a segmented pagination indicator to the right of the row title",
+    "Make Play (white) and More Info (translucent gray) pill buttons, and remove the info icon",
+    "Replace the match/synopsis/rating-box block with a status line (optional red LIVE badge) and a 'Genre • Year • N Seasons • Rating' metadata row",
+    "Add a circular mute button to the hero's top-right and a 'New Episode' tag to its bottom-right",
+    "Add a gray pill highlight to the active nav item, enlarge the nav links to about 18px with wider gaps, and add the Kids icon and label before the profile avatar",
+    "Increase the row title to about 28px semibold"
+  ],
+  "summary": "Netflix nav, hero, and row are all there, but the implementation uses the older full-bleed hero with portrait posters and square buttons. The reference has a rounded inset hero card, pill buttons, landscape tiles, and several hero/nav controls that are missing here."
+}

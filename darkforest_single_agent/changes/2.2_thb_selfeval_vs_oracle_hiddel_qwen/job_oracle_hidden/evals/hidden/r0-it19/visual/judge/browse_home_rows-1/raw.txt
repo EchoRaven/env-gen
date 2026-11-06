@@ -1,0 +1,75 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both screens have a dark top nav bar and stacked horizontal rows with a left gutter of about 67–77px. In the reference the whole viewport is rows: four full rows of large 16:9 tiles, about five per row with a sixth peeking at the right edge. The implementation still shows the bottom of a hero (Play/More Info/TV-14) under the nav, which the reference doesn't have in this state. Its rows use small portrait tiles, about 9 per row, and two rows are just empty-state text. The TV Action row stops after 6 tiles instead of running past the right edge. Row spacing also differs: the reference packs rows tightly, about 285px apart.",
+      "fix": "Scroll past the hero or drop it so rows start right under the nav. Make each row a full-bleed carousel of ~350x197 16:9 tiles with ~9px gaps, about 5 per row and the next one cut off at the right edge, with ~60px between rows."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Nav item count matches (7 links), and search, bell, avatar and caret are all there. Missing: the pill highlight behind the active 'Home' link, the Kids profile shortcut, the page-indicator bars at the right of each row header, the 'BETA' chip next to the Games heading, the red 'TOP 10' corner badges, and the bottom-centre status tags ('New Season', 'New Episode', 'Recently Added', 'Watch Now'). Added: a hover preview card with action buttons and match %, carousel arrow controls, and hero buttons, none of which appear in the reference.",
+      "missing": [
+        "active Home pill highlight",
+        "Kids profile link with icon",
+        "row page-indicator bars (top-right of each row)",
+        "BETA chip on Games heading",
+        "TOP 10 corner badges on tiles",
+        "bottom-centred status tags (New Season / New Episode / Recently Added / Watch Now)",
+        "Games row of landscape tiles",
+        "Only on Netflix row",
+        "Top Searches row"
+      ]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Both use flat dark surfaces. The reference tiles have visibly rounded corners (~8px) and sit in a dense, even grid. The implementation tiles are square-cornered portrait posters, and the empty-state rows break up the rhythm. The reference has no hover card overlay.",
+      "fix": "Round tile corners to ~8px, use 16:9 crops, and keep the spacing between rows consistent."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Same near-black base, white text and red wordmark. The reference also uses red (#E50914-like) for status tags and TOP 10 badges, a white 'Watch Now' tag, a grey pill for the active nav item and a purple-outlined BETA chip. The implementation has none of these, and its nav bar is slightly lighter grey than the page.",
+      "fix": "Add red status tags with white text, white 'Watch Now' tags, red TOP 10 badges, a #333-ish pill behind the active nav item and a purple outline on the BETA chip. Keep the nav bar the same black as the page."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans-serif with bold row headings. The reference's nav links and row headings are larger (~18px nav, ~26px headings) with more spacing between nav items. The implementation's nav is compact at ~14px, and the active item is shown in bold instead of with a pill.",
+      "fix": "Set nav links to ~18px regular with ~44px spacing, row headings to ~26px semibold, and tag text to ~15px bold."
+    },
+    "iconography": {
+      "score": 0.5,
+      "notes": "The search and bell line icons match. The reference uses a rounded-square blue smiley profile avatar plus a Kids avatar; the implementation uses a green letter avatar. The biggest gap is imagery: the reference uses 16:9 landscape artwork with the title lockup on the image, while the implementation uses 2:3 portrait posters.",
+      "fix": "Use landscape 16:9 tile artwork with rounded corners, a rounded-square character avatar, and a Kids icon next to the profile."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly ('Home', 'Shows', 'Movies', 'Games', 'New & Popular', 'My List', 'Browse by Languages'), as do the 'TV Action & Adventure' and 'Games' headings. The implementation is missing the 'Kids' label, the 'BETA' chip, the tag copy, and the 'Only on Netflix' and 'Top Searches' headings. It adds empty-state sentences the reference doesn't have.",
+      "fix": "Add the 'Kids' nav label, the 'BETA' chip, tile tags ('New Season', 'New Episode', 'Recently Added', 'Watch Now') and the 'Only on Netflix' and 'Top Searches' rows."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "rows: the reference uses large 16:9 rounded landscape tiles (~5 per row); the implementation uses small portrait 2:3 posters (~9 per row)",
+    "tiles: the implementation is missing the bottom-centred red/white status tags and the red TOP 10 corner badges shown on many reference tiles",
+    "page body: the implementation shows the hero's Play/More Info/TV-14 controls under the nav; the reference shows only rows",
+    "middle of the page: the implementation renders 'Continue Watching' and 'Games' as text-only empty states; the reference shows every row filled with artwork",
+    "Trending Now row: the implementation shows an expanded hover preview card overlapping the row; the reference has no hover card",
+    "row headers: the reference has segmented page-indicator bars at the right edge of each row title; the implementation has none",
+    "Games heading: the reference has a purple-outlined 'BETA' chip; the implementation doesn't",
+    "nav: the reference highlights 'Home' with a grey pill and has larger, more widely spaced links; the implementation uses bold text and a compact 14px nav",
+    "nav right: the reference has a 'Kids' icon and label before the profile avatar; the implementation lacks it and uses a green letter avatar instead of a rounded-square character avatar",
+    "TV Action & Adventure row: the implementation stops after 6 tiles; the reference runs the row full-bleed with a tile cut off at the right edge"
+  ],
+  "fixes": [
+    "Switch row tiles to 16:9 landscape artwork (~350x197) with ~8px radius and ~9px gaps, full-bleed with a cut-off tile at the right edge",
+    "Add bottom-centred status tags on tiles (red bg for 'New Season', 'New Episode' and 'Recently Added'; a white bg 'Watch Now' tag next to them) and red TOP 10 corner badges",
+    "Remove or scroll past the hero so rows start directly under the nav, and don't open the hover preview card by default",
+    "Fill or hide the empty-state rows; render Games as a landscape row with a 'BETA' outlined chip and add the 'Only on Netflix' and 'Top Searches' rows",
+    "Add segmented page-indicator bars aligned right on each row header",
+    "Restyle the nav: ~18px links with wider spacing, a grey pill behind the active 'Home' link, and a 'Kids' icon and label before a rounded-square character avatar",
+    "Make the nav bar background the same near-black as the page and enlarge row headings to ~26px"
+  ],
+  "summary": "The implementation shares the Netflix dark nav, wordmark and row structure, but uses portrait poster tiles with no tags, badges or indicators, leaves the hero, a hover card and empty-state rows on screen, and lacks the reference's dense landscape-tile row grid."
+}
+```

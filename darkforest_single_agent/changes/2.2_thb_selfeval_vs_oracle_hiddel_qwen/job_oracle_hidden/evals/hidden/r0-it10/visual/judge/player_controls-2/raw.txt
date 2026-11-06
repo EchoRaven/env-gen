@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Overall structure matches: the video fills the whole screen with no shared app chrome, a back arrow sits top-left, and a full-width scrubber runs above a bottom control row with left and right clusters. Differences: the reference has a flag/report icon top-right, and the implementation has nothing there. The reference has a centred title in the middle of the control row, and the implementation leaves that space empty. The implementation's controls sit lower and are much more compact. Its time readout sits at the end of the bar like the reference's, but it is smaller.",
+      "fix": "Add a report-flag icon top-right that mirrors the back arrow's inset (~40px). Put a centred title lockup in the bottom control row. Raise the control row to ~70px from the bottom and give icons ~90px spacing."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back arrow, play/pause, rewind 10, forward 10, volume, subtitles, fullscreen, scrubber and time. Missing: report-flag icon, centred title + episode label, next-episode button and episodes-list button. The implementation adds things the reference doesn't show: an inline volume slider and an AD (audio description) icon. Its list icon is not the reference's stacked-cards episodes icon. The scrubber has no red played fill, no red round thumb, no buffered segment and no chapter markers.",
+      "missing": [
+        "report/flag icon (top-right)",
+        "centred title + episode label in control bar",
+        "next-episode button",
+        "episodes (stacked cards) button",
+        "red progress fill with round red scrubber thumb"
+      ],
+      "fix": "Add the flag button, the title lockup, a next-episode (play-with-bar) icon and a stacked-cards episodes icon. Remove the inline volume slider and the AD icon. Style the scrubber with a red fill, a ~16px red round thumb, a lighter buffered segment and a grey track."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat and minimal, with white icons over the video. The reference uses large, airy controls (~48px icons with wide gaps). The implementation is cramped, with ~24px icons and a hairline bar that has no visible thumb.",
+      "fix": "Scale control icons to ~44–50px with ~90px pitch. Make the scrubber ~4px thick with a prominent round thumb."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both are dark with white icons and text. The implementation's bar has none of the reference's red accent (played portion and thumb) and none of the yellow chapter ticks. The bright poster frame is content, but the reference shows a dark overlay state.",
+      "fix": "Colour the played progress and thumb Netflix red (#E50914). Show the buffered segment in light grey and the track in mid grey. Optionally add a subtle dark gradient behind the bottom controls."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "The reference has a centred title, with the show name in bold, then the episode code and episode name in regular weight at ~22px. It also has a remaining-time label (e.g. 32:57). The implementation has no title text, and its time reads '0:00 / 0:00' in a small font.",
+      "fix": "Add the title in ~22px sans: show name bold, then 'E#' and the episode name in regular weight. Show remaining time as a single value (e.g. '32:57') at ~17px."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use white outline icons. The reference's are large and bold: circular-arrow rewind/forward with '10' inside, a speaker with waves, a speech-bubble subtitles icon and corner-bracket fullscreen. The implementation's are tiny. Its volume icon shows a muted X where the reference shows waves. Its list icon replaces the stacked-cards episodes icon, it adds an AD icon, and it has no flag icon.",
+      "fix": "Use bold ~48px outline icons. Show the '10' clearly inside the rewind/forward arrows. Use a speaker-with-waves icon, a stacked-cards episodes icon, a next-episode icon and a flag icon."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "The reference's chrome text is the title lockup format '<Show> E1 <Episode>' plus remaining time. The implementation has no title copy, and its time format differs ('0:00 / 0:00' instead of remaining time).",
+      "fix": "Render '<Show> E<n> <Episode title>' centred, and show remaining time only."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "Bottom control row centre: the reference has a centred title lockup ('<Show> E1 <Episode>'); the implementation has none",
+    "Bottom-right cluster: the reference has next-episode and stacked-cards episodes icons; the implementation has neither and adds an AD icon and a list icon instead",
+    "Top-right: the reference has a flag/report icon; the implementation has nothing there",
+    "Scrubber: the reference has a red played fill, a red round thumb, a buffered segment and chapter ticks; the implementation's bar is a plain grey hairline with no thumb",
+    "Control sizing: the reference's icons are ~48px with wide spacing; the implementation's are ~24px and cramped",
+    "Bottom-left: the implementation adds an inline volume slider the reference doesn't have, and its volume icon shows a muted X instead of sound waves",
+    "Time label: the reference shows remaining time (e.g. '32:57'); the implementation shows '0:00 / 0:00'"
+  ],
+  "fixes": [
+    "Add a centred title lockup to the control row: show name bold, then 'E#' and the episode name in regular weight, ~22px white",
+    "Add a next-episode icon and a stacked-cards episodes icon to the right cluster, before subtitles and fullscreen; remove the AD and list icons",
+    "Add a flag/report icon top-right that mirrors the back arrow",
+    "Restyle the scrubber: ~4px track, red (#E50914) played fill, ~16px red round thumb, light-grey buffered segment",
+    "Scale all control icons to ~48px with ~90px spacing, and raise the row slightly",
+    "Remove the inline volume slider and show a speaker-with-waves icon",
+    "Show remaining time only (e.g. '32:57') at the end of the bar"
+  ],
+  "summary": "The basic Netflix-style player layout is there (back arrow, scrubber, bottom control row), but the implementation is missing the title lockup, the flag icon, and the next-episode and episodes buttons. It also lacks the red scrubber styling, and its icons are much smaller and more cramped."
+}

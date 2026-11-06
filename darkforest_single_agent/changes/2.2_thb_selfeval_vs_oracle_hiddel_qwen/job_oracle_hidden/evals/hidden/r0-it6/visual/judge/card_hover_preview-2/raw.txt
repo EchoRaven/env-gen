@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "Both have a top nav and stacked horizontal rails on a dark background. The reference is a genre sub-page: under the nav it has a 'TV Shows > Sports TV Shows' breadcrumb header, and below that a faint backdrop sits behind evenly spaced rails, each titled, with page-indicator dashes. The implementation is the Home layout with a billboard hero in its place. Its second rail has no visible title, and a stray 'ck a title to start' empty-state line sits between rails. The hover card is in the wrong place. In the reference it scales up in place, centred over the hovered tile and overlapping the rows above and below. In the implementation it is pinned to the far-left edge (x≈8) and drops below the poster, so the poster's own controls still show underneath it.",
+      "fix": "Render this route as the genre page: nav, then a breadcrumb header ('TV Shows' › large page title), then titled rails with page-indicator dashes on the right. Remove the hero. Anchor the preview card to the hovered tile's centre, about 1.5× tile width, scaled from the tile's position, and clamp it inside the row gutters."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The preview card has the right parts: media on top, then play, add, rate and expand buttons, then a maturity badge and a dot-separated tag line. It is missing the mute toggle over the media, the title-art logo on the preview, the '3 Seasons' text and the HD badge. It adds a '92% Match' and year row that the reference card does not have. The expand chevron sits beside the other buttons when it should be right-aligned and the same size as them. The nav has no active-pill state on the current tab and no 'Kids' profile link. The rails have no TOP 10 or 'Recently Added' tile badges. Extras the reference doesn't have: a hero billboard, a checkmark glyph at the left of the rail, and the empty-state text.",
+      "missing": ["breadcrumb page header (parent › title)", "Kids profile link in the nav", "active pill highlight on the current nav item", "mute toggle on the preview media", "title-art logo on the preview media", "season count + HD badge in the preview metadata", "TOP 10 / Recently Added tile badges", "rail page-indicator dashes", "second rail heading"]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Both use a flat dark theme with a softly rounded, raised preview card. The reference card is large and airy, with big 52px circular buttons and generous padding. The implementation's card is small and cramped, with tiny buttons. The reference tiles are slightly rounded; the implementation tiles are square-cut posters.",
+      "fix": "Enlarge the preview card (≈430px wide) and its buttons (≈52px circles with a 2px grey border). Add ~20px padding and give tiles a ~4px radius."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both have a near-black base with a slightly lighter card surface, a red wordmark and a white primary play button. The implementation adds green 'Match' text that the reference doesn't use. The reference has a muted backdrop image behind its rails; the implementation shows a hero image instead.",
+      "fix": "Remove the green match text from the card. Use #181818 for the card and keep the maturity box with a grey border."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a similar sans-serif. The reference has a large 44px page title and 26px rail headings. The card metadata is set at 18px, with a boxed maturity rating and tags in regular white. The implementation's card text is much smaller (~13px) and its nav labels are smaller too.",
+      "fix": "Set the card metadata to ~18px and the tags to ~17px white. Use ~26px rail titles and a ~44px page title."
+    },
+    "iconography": {
+      "score": 0.45,
+      "notes": "The implementation uses the same outline circle buttons for add and rate and the same filled white play button, but they are much smaller. The reference uses 16:9 landscape tiles with title art and a 16:9 preview. The implementation uses 2:3 portrait posters. The reference avatar is a rounded-square profile icon; the implementation's is a green letter tile. A checkmark sits at the far left of the implementation's rail.",
+      "fix": "Switch the rail tiles to 16:9 backdrop images with title-logo overlays. Use a 16:9 preview with the logo at bottom-left and a mute icon at bottom-right. Remove the stray checkmark."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The nav labels match apart from the missing 'Kids' link. The reference uses genre-page rail headings ('Your Next Watch', 'TV Comedies'…). The implementation has 'Trending Now', an untitled rail and the stray 'ck a title to start' text. The card shows '92% Match 2026' where the reference shows '3 Seasons HD'.",
+      "fix": "Add the 'TV Shows › <Genre> TV Shows' breadcrumb and the 'Kids' nav link. Show '<n> Seasons' + HD in the card. Delete the empty-state string."
+    }
+  },
+  "similarity": 0.48,
+  "empty_state": false,
+  "deviations": [
+    "page skeleton: the implementation shows the Home hero billboard; the reference is a genre page with a breadcrumb header ('TV Shows > Sports TV Shows') and no hero",
+    "hover preview position: the implementation pins the card to the far-left screen edge, below the hovered poster, with the poster's own controls showing underneath; the reference scales the card in place, centred over the hovered tile",
+    "hover preview size: the implementation's card is ~340px with tiny ~28px buttons; the reference's card is ~430px with ~52px buttons",
+    "tiles: the implementation uses 2:3 portrait posters; the reference uses 16:9 landscape tiles with title-art overlays and TOP 10 / Recently Added badges",
+    "preview metadata: the implementation shows a green 'Match' and year row with the maturity badge right-aligned by the buttons; the reference shows a maturity box + seasons + HD badge on its own line, then tags",
+    "preview media: the implementation has no mute toggle and no title-art logo on the preview",
+    "expand chevron: in the implementation it sits inline right after the rate button; in the reference it is right-aligned in the button row",
+    "between rails: the implementation shows the stray empty-state text 'ck a title to start' and a second rail with no heading",
+    "nav: the implementation has no active pill on the current tab and no 'Kids' profile link",
+    "the implementation adds a checkmark glyph at the left of the rail that the reference does not have"
+  ],
+  "fixes": [
+    "Route 'hover a rail poster' to the genre page layout: nav, breadcrumb header, then titled rails. Remove the hero.",
+    "Use 16:9 landscape tiles with title-logo art and corner/bottom badges (TOP 10, Recently Added)",
+    "Position the preview card centred over the hovered tile at ~1.5× scale, clamped to the row gutters, and hide the underlying tile",
+    "Rebuild the preview card: 16:9 media with the title logo bottom-left and a mute button bottom-right. Below it, a row of ~52px buttons (play, add, rate) with the expand chevron right-aligned. Then a maturity box + '3 Seasons' + HD badge, then dot-separated tags at ~17px.",
+    "Remove the green Match row, the stray checkmark and the 'ck a title to start' text. Give every rail a heading.",
+    "Add the nav active pill on the current item and the 'Kids' link beside the profile avatar"
+  ],
+  "summary": "The implementation has the right parts of a Netflix hover preview, but it sits on the Home page with portrait posters, is pinned to the screen edge, and is undersized, missing the reference's metadata and media overlays."
+}
+```

@@ -1,0 +1,119 @@
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             1  e.g. tools/api_smoke.py:2: api_smoke
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/runs/netflix__r0/snapshots/iter7/workspace",
+ "tag": "r0-it7",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 46,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 3,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 4,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 22,
+  "total": 23,
+  "failed": [
+   "clicking a poster opens the title detail with Play"
+  ]
+ },
+ "visual_captured": 18,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 1
+ },
+ "visual": {
+  "mean_similarity": null,
+  "n_scored": 0,
+  "n_screens": 20,
+  "below_0.55": [],
+  "per_screen": {
+   "landing": null,
+   "login": null,
+   "browse_home": null,
+   "browse_home_rows": null,
+   "shows": null,
+   "movies": null,
+   "games": null,
+   "new_and_popular": null,
+   "genre_category": null,
+   "browse_by_languages": null,
+   "my_list": null,
+   "title_detail": null,
+   "title_episodes": null,
+   "rate_dialog": null,
+   "player": null,
+   "player_controls": null,
+   "account_menu": null,
+   "card_hover_preview": null,
+   "card_preview": null,
+   "shows_genres_menu": null
+  }
+ }
+}

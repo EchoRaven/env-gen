@@ -1,0 +1,71 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.35,
+      "notes": "The reference has a full-width header with the NETFLIX logo at the top left (x≈213) and a hairline divider under it at y≈100. Below that, a ~490px form column sits roughly centred with no card around it, on a full-bleed background. A full-width footer band (#161616-ish) starts at y≈905 and holds a phone line and a 4-column link grid. The implementation has no header and no footer. Its logo, heading, form and note all sit inside one centred boxed card (~450px) floating on a flat background.",
+      "fix": "Take out the card container. Add a full-width top header with the logo left-aligned at a ~213px gutter and a 1px divider under it. Put the form column at ~490px, starting ~140px below the header. Add a full-width dark footer band at the bottom of the page."
+    },
+    "components": {
+      "score": 0.35,
+      "notes": "Both have the logo, a heading, an email input and a red primary button. The reference uses a single-step email-only form with a floating-label input; the implementation adds a Password field. The implementation is missing the subtitle line, the 'Get Help' dropdown toggle with chevron, the reCAPTCHA notice, the footer phone line and the 8-link footer grid. It also adds things the reference doesn't have: a 'New to Netflix? Sign Up Now.' line, a divider and a demo-disclaimer note.",
+      "missing": [
+        "top header bar with divider",
+        "subtitle 'Or get started with a new account.'",
+        "floating-label email input (label above the value inside the box)",
+        "'Get Help' dropdown toggle with chevron",
+        "reCAPTCHA notice text",
+        "footer 'Questions? Call …' line",
+        "footer 4-column link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)"
+      ],
+      "fix": "Remove the Password field and the 'Sign Up Now' line. Add the subtitle, a floating-label email input, a 'Get Help ⌄' toggle and the reCAPTCHA note. Add the footer with the phone line and the underlined 4-column link grid."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "Both are minimal and dark with slightly rounded inputs and buttons. The reference has no card: the content sits directly on a radial dark-maroon gradient that fades to black, separated by hairline dividers. The implementation uses a flat boxed card on a flat background. Its input fill is a lighter grey (#333-ish), while the reference input is near-transparent with a thin grey border.",
+      "fix": "Drop the card. Make inputs transparent or dark with a 1px grey border and ~4px radius. Use a ~52px button height with ~4px radius."
+    },
+    "color": {
+      "score": 0.45,
+      "notes": "Both are dark with a red CTA. The reference background is a dark red/maroon gradient (≈#3a1a1a at the top fading to #000), with a separate #161616 footer surface. The implementation is flat neutral #141414. The reference button red is slightly warmer/orange (#D6302A-ish); the implementation uses #E50914-ish.",
+      "fix": "Set the page background to a maroon-to-black vertical/radial gradient and make the footer band #161616. Shift the CTA red slightly warmer (~#D93228)."
+    },
+    "typography": {
+      "score": 0.45,
+      "notes": "Both use sans-serif. The reference heading is large and bold (~36px, 700) and is followed by a ~20px regular grey subtitle. The implementation heading is regular weight and has no subtitle. The reference button label is semibold; the implementation's is regular. The reference input shows a small caption label (~13px) above the value; the implementation uses a placeholder. The reference footer links are underlined grey text.",
+      "fix": "Make the heading ~36px bold and add a ~20px grey subtitle. Make the button label semibold ~20px. Use a floating-label input with a 13px label and a 18px value."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Both render the red NETFLIX wordmark correctly. The reference logo is larger (~165px wide) and sits in the header; the implementation's is ~120px and inside the card. The 'Get Help' chevron icon is missing.",
+      "fix": "Move the wordmark into the header top-left and scale it to ~165px wide. Add a thin-line chevron-down next to 'Get Help'."
+    },
+    "copy": {
+      "score": 0.3,
+      "notes": "The reference copy is 'Enter your info to sign in', 'Or get started with a new account.', label 'Email or mobile number', button 'Continue', 'Get Help', and 'This page is protected by Google reCAPTCHA…'. The implementation has 'Sign In', 'Email', 'Password', button 'Sign In', 'New to Netflix? Sign Up Now.' and a demo disclaimer.",
+      "fix": "Change the heading to 'Enter your info to sign in', the label to 'Email or mobile number' and the button to 'Continue'. Add the subtitle, 'Get Help', the reCAPTCHA text and the footer copy."
+    }
+  },
+  "similarity": 0.4,
+  "empty_state": false,
+  "deviations": [
+    "Page structure: the implementation wraps everything in a centred boxed card. The reference has no card; the content sits on a full-bleed gradient under a full-width header.",
+    "Top of page: the reference's full-width header (logo top-left plus a hairline divider at ~y100) is missing. The implementation puts the logo inside the card.",
+    "Bottom of page: the reference's footer band ('Questions? Call…' plus a 4-column underlined link grid) is missing from the implementation.",
+    "Form: the implementation adds a Password field. The reference is a single email/mobile input followed by 'Continue'.",
+    "Below the heading: the reference subtitle 'Or get started with a new account.' is missing.",
+    "Below the button: the reference has a 'Get Help ⌄' toggle and a reCAPTCHA notice. The implementation shows 'New to Netflix? Sign Up Now.', a divider and a demo disclaimer instead.",
+    "Background: the reference uses a maroon-to-black gradient; the implementation uses flat neutral #141414.",
+    "Heading: the reference is bold, ~36px, reading 'Enter your info to sign in'. The implementation is regular-weight 'Sign In'.",
+    "Email input: the reference uses a floating label ('Email or mobile number') on a transparent bordered field. The implementation uses a placeholder on a grey-filled field.",
+    "CTA: the reference label is semibold 'Continue' on a warmer red. The implementation is regular 'Sign In' on #E50914."
+  ],
+  "fixes": [
+    "Take the login route out of any card wrapper. Render a full-width header with the NETFLIX wordmark (~165px) at the top left and a 1px rgba(255,255,255,0.15) divider below it.",
+    "Set the page background to a dark-maroon-to-black gradient (≈#3b1a1a → #000).",
+    "Build a ~490px centred column with: bold ~36px 'Enter your info to sign in', a grey ~20px subtitle 'Or get started with a new account.', a floating-label input 'Email or mobile number' (transparent, 1px grey border, 4px radius), and a full-width semibold 'Continue' button (~52px tall, warm red).",
+    "Remove the Password field, the 'New to Netflix? Sign Up Now.' line, the divider and the demo disclaimer.",
+    "Below the button, add a 'Get Help' toggle with a chevron-down, then small grey text: 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Add a full-width #161616 footer band with 'Questions? Call 1-844-569-7700 (Toll-Free)' and a 4-column grid of underlined grey links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)."
+  ],
+  "summary": "The implementation is a generic boxed email-plus-password Netflix sign-in card. The reference is an email-first 'Continue' flow with a header, a maroon gradient page, 'Get Help' and reCAPTCHA text, and a link footer. The brand and dark-and-red palette match, but the structure, copy and components differ significantly."
+}

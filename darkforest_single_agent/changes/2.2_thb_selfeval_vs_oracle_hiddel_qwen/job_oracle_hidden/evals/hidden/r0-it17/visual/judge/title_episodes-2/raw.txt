@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Both screens use the same structure: a centered dark modal (about 1080px wide) over a dimmed home page, with a synopsis at the top, an 'Episodes' header row and a vertical list of episodes separated by hairline dividers. The row layout differs. The reference puts the episode number first, about 50px wide on the far left, then the thumbnail, then the text block. The implementation puts the thumbnail first and the number between the thumbnail and the text. In the reference, the duration sits top-right on the title line. In the implementation, it is vertically centered at the far right edge of the row. The reference's text block is also wider relative to the thumbnail.",
+      "fix": "Reorder each episode row to [number (~50px column, centered) | thumbnail (~170x96) | text block]. Put the title and the duration on one baseline row, with the duration right-aligned at about 80px from the row's right edge. Put the description below, full text-block width."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Present: the synopsis, the 'Episodes' heading, the right-side header label, numbered episode rows with thumbnail, title, duration and description, and the dividers. Differences: the reference shows plain text on the right of the header (the series or season name), with no dropdown and no '4 Seasons' counter. The implementation adds a native select box and a seasons count. The reference highlights the first or active row with a lighter, rounded panel. The implementation highlights row 3 instead, and that looks like a stray hover state. The reference shows a play overlay only on the hovered thumbnail. The implementation puts a play button on every thumbnail. The implementation adds a 'Genres:' line above the Episodes header that does not appear in this part of the reference.",
+      "missing": [
+        "highlighted current-episode row (row 1, lighter rounded panel)",
+        "plain-text season/series label at the right of the Episodes header (in place of the select box)"
+      ],
+      "fix": "Give episode 1 (the current episode) a #333 background panel with about 4px corner radius by default. Show the thumbnail play overlay only on hover, as a large centered circle with a white outline. Replace the native select with a styled text label. If several seasons must be supported, use a dark dropdown without native chrome."
+    },
+    "style": {
+      "score": 0.72,
+      "notes": "Both are flat and dark, with hairline dividers and airy row spacing. The reference's active row uses a rounded, lighter panel that fills the full content width. The implementation's native browser select, with its white border and system arrow, breaks the design language. The reference's play overlay is a large translucent circle centered on the thumbnail. The implementation uses small solid black circles in the bottom-right corner of every thumbnail.",
+      "fix": "Remove the native select styling. Use a centered play overlay about 56px across, with a translucent dark fill and a 2px white ring, and show it only on hover. Give the active row about 4px corner radius."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The modal surface (#181818) and the dimmed backdrop match. In the reference, descriptions are near-white (about #d2d2d2) and fairly bright. In the implementation, descriptions are a dimmer gray (about #aaa). Episode numbers in the reference are bright white and large. In the implementation they are muted gray. The implementation's highlight on row 3 is darker and subtler than the reference's #2f2f2f-style panel.",
+      "fix": "Set episode numbers to #fff and description text to about #d2d2d2. Set the active-row background to about #333."
+    },
+    "typography": {
+      "score": 0.62,
+      "notes": "Both use a sans typeface. In the reference, episode titles are bold or semibold at about 17px. In the implementation they are regular weight at about 15px. Reference descriptions are about 15px with roughly 1.5 line height. Implementation descriptions are smaller (about 13px) and tightly set. The reference's episode numbers are large (about 24px) and light. The implementation's are smaller and gray. The reference's 'Episodes' heading is bold at about 26px. The implementation's is similar but slightly smaller. The reference's duration is about 17px white. The implementation's is a small gray caption.",
+      "fix": "Episode title: 16–17px, weight 700, white. Description: 14–15px, line-height 1.5, #d2d2d2. Episode number: 24px, white. Duration: 16px, white, on the same line as the title."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "Thumbnails are similar: 16:9 cover crop at roughly 170x96. The reference's corners are slightly rounded and the implementation's are near-square, which is acceptable. The implementation repeats a small filled play badge on every thumbnail. The reference shows only one large outlined play circle, centered, on hover. The implementation shows the same artwork in every row. That is seeded content, but it makes the list look like a set of placeholders.",
+      "fix": "Remove the always-visible corner play badges. Add a hover-only centered play circle. Give thumbnails about 4px corner radius. Use per-episode stills if the data has them."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "'Episodes' heading matches. Durations use the same 'NNm' format. The implementation adds '4 Seasons' and 'Season 1' select copy, plus a 'Genres:' label. The reference shows only the series or season name as the header label.",
+      "fix": "When the title has a single season, show only the series or season name at the right of the header. Drop the 'N Seasons' prefix."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "episode rows: the reference has the number at the far left, before the thumbnail. The implementation puts the thumbnail first and the number between the thumbnail and the text.",
+    "episode rows: the reference puts the duration on the title line, top-right of the text block. The implementation centers it vertically at the far right edge of the row.",
+    "episode title: the reference uses bold, larger, white titles. The implementation uses regular-weight, smaller titles.",
+    "episode descriptions: the reference uses larger, brighter text (about 15px, near-white). The implementation uses smaller, dimmer gray text (about 13px).",
+    "thumbnails: the implementation shows a small black play badge on every thumbnail. The reference shows a single large centered play circle, only on the hovered row (row 2).",
+    "active row: the reference highlights row 1 with a lighter rounded panel. The implementation highlights row 3 with a faint background.",
+    "Episodes header right: the reference shows a plain text label. The implementation shows '4 Seasons' and a native white-bordered <select> reading 'Season 1'.",
+    "above the Episodes header: the implementation adds a 'Genres:' line that does not appear at this position in the reference.",
+    "episode numbers: the reference uses large white numerals. The implementation uses smaller gray numerals."
+  ],
+  "fixes": [
+    "Reorder each episode row to number | thumbnail | text block. Make the number column about 50px wide, with 24px white numerals.",
+    "Put the title (16–17px, bold, white) and the duration (16px, white) on one line. Right-align the duration within the text block.",
+    "Set descriptions to 14–15px, line-height 1.5, color #d2d2d2.",
+    "Remove the per-thumbnail play badges. Show a large centered outlined play circle only on hover.",
+    "Highlight the current episode (row 1) with a #333 background panel with about 4px radius, instead of highlighting an arbitrary row.",
+    "Replace the native season <select> and the 'N Seasons' text with a styled plain-text label (or a dark custom dropdown) at the right of the Episodes header.",
+    "Move or remove the 'Genres:' line so the synopsis flows straight into the Episodes section."
+  ],
+  "summary": "The modal shell and episode-list structure match the reference, but the row anatomy (number position, where the duration sits, title weight, text sizes), the play overlays on every thumbnail and the native season select all differ from the reference design."
+}
+```

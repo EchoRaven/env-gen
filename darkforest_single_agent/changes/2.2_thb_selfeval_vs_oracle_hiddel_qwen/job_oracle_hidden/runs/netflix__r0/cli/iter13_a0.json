@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1ad38-895c-7ee3-b9d3-85fb2471f421",
+ "num_turns": 10,
+ "commands": 4,
+ "usage": {
+  "input_tokens": 36572199,
+  "cached_input_tokens": 35672000,
+  "cache_write_input_tokens": 649152,
+  "output_tokens": 296879,
+  "reasoning_output_tokens": 150818
+ },
+ "is_error": false,
+ "result": "\n\n**Iteration 13 submitted.**\n\n**Diagnosis**: After 8 consecutive green runs, `docker_up` failed on a new environment-side issue: `container name \"/netflix_database\" is already in use by container b5506bdff930` \u2014 a **leftover container from a previous evaluation** whose cleanup apparently slipped through. Because my compose pinned fixed `container_name` values, the name conflict was fatal.\n\n**Fixed**\n- Removed all three `container_name` fields from `docker/docker-compose.yml`. Compose now uses project-prefixed auto-names (`thbval21_netflix_database_1`, \u2026) which (a) cannot collide with the orphan `netflix_database`, and (b) are compose-managed \u2014 subsequent runs reuse/recreate them properly instead of erroring (the \"name in use\" error only fires for names compose doesn't own). The project prefix `thbval21` is stable across runs (visible in both reports), so behavior stays deterministic.\n- Everything else untouched: service names, ports (5432/18000/18080), healthcheck, volume, mounts \u2014 the harness consumes these via compose/service names, not container names.\n\n**Verified**: compose YAML valid with no fixed names; 45/45 API smoke on a fresh local seed (the app itself is unaffected by the compose change, re-run for good measure).\n\n**Residual risk**: a *running* leftover could theoretically still hold port 5432, but the reported failure was the name conflict at container-creation (pre-binding), and runs 4\u201312 prove 5432 is free when cleanup works. The name-conflict failure class is now eliminated; if this run's environment repeats the cleanup slip, the stack should boot cleanly around the orphan.",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 165.7,
+ "_stderr": ""
+}

@@ -1,0 +1,75 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both use a top nav bar with the logo on the left, links in the middle and icons on the right, then a hero above a 'section title + horizontal row'. In the reference, the hero is an inset card with large rounded corners (about 67px side margins) sitting below an opaque, gradient-tinted header. The implementation makes the hero full-bleed and lays the transparent nav over the artwork. The reference row uses wide landscape tiles, about 5 per viewport. The implementation uses narrow portrait posters, about 11 per viewport. The reference has a segmented page indicator at the right of the row header; the implementation has none.",
+      "fix": "Put the header in its own band above the hero (about 96px tall, dark gradient background). Render the hero as an inset card with about 67px horizontal margins and about 24px corner radius, running from y≈96 to y≈912. Use 16:9 landscape tiles (about 350px wide, about 10px gap) in the rows, and put a segmented progress indicator right-aligned on the row title line."
+    },
+    "components": {
+      "score": 0.55,
+      "missing": [
+        "Pill highlight behind the active 'Home' nav item",
+        "Kids profile entry (icon + 'Kids' label) in the header",
+        "Mute/sound toggle button at the top right of the hero",
+        "Red 'LIVE' badge with status text line ('Started at …')",
+        "Metadata row with dot separators (genre • year • seasons • rating)",
+        "'New Episode' badge at the bottom right of the hero",
+        "Segmented row pagination indicator",
+        "'TOP 10' badge on tiles"
+      ],
+      "notes": "Nav link count matches (7) and so do the search, bell, avatar and caret, along with the Play and More Info buttons. The implementation adds things the reference lacks: a green '92% Match' label, a synopsis paragraph, an outlined TV-14 rating box beside the buttons, and an info icon on More Info. The hero is missing the reference's live badge, metadata row, mute button and New Episode tag.",
+      "fix": "Add the pill-highlighted Home tab, the Kids entry, the hero mute button, the LIVE badge with status line, the dot-separated metadata row and the New Episode tag. Remove the match %, synopsis and boxed rating from the hero."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "The reference has a soft, rounded, modern look: a rounded hero card with a shadow, pill-shaped Play and More Info buttons, a pill nav highlight and rounded tiles. The implementation uses the classic flat look: square-cornered buttons, full-bleed hero, square posters with no gaps or radius.",
+      "fix": "Make the Play and More Info buttons fully pill-shaped (about 26px radius, about 52px tall). Give tiles about 8px corner radius and about 10px gaps, and give the hero card about 24px radius with a soft drop shadow."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both are dark with a red NETFLIX wordmark, a white Play button and a translucent gray More Info button. In the reference, the header and page background are a warm gray-brown gradient (#3a3632 fading to #181818). The implementation uses near-black. The implementation also adds a green match accent.",
+      "fix": "Use a warm dark-gray gradient for the page and header background. Remove the green match text, and make the More Info button background rgba(255,255,255,0.2)."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans font with similar hierarchy. In the reference, nav links are larger (about 17px) and gray, with bold white active text. The implementation's nav is smaller (about 14px) and tightly spaced. In the reference, the section title is larger (about 26px, semibold) and the button text is bold and larger. The implementation also shows a synopsis body text level that the reference doesn't have.",
+      "fix": "Set nav links to about 17px with about 44px spacing, use about 26px semibold row titles and about 20px bold button labels, and add a 22px semibold status line plus a 17px metadata row."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The search, bell and caret icons are similar line icons. In the reference, the avatar is a blue rounded square with a smiley face. The implementation uses a green rounded square with a letter. Both heroes use a title-artwork treatment. The reference tiles are landscape 16:9 with rounded corners; the implementation tiles are portrait 2:3 with square corners. The implementation's More Info has an info icon the reference lacks, and it has no Kids icon, mute icon, megaphone 'New Episode' icon or TOP 10 badge.",
+      "fix": "Switch row artwork to rounded landscape 16:9 crops. Add the Kids icon, the circular mute icon button and the TOP 10 corner badge, and remove the info glyph from More Info."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels match exactly (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), as do Play and More Info. The reference has the 'Kids' and 'New Episode' labels; the implementation is missing both. The implementation adds '% Match'. Its 'Browse by Languages' label is hard to read over the hero artwork.",
+      "fix": "Add the 'Kids' label and the 'New Episode' tag, and drop the '% Match' copy."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "hero: the reference is an inset, rounded-corner card below the header; the implementation is a full-bleed hero with the nav overlaid on the artwork",
+    "content row: the reference uses landscape 16:9 rounded tiles (~5 per viewport); the implementation uses portrait 2:3 square posters (~11 per viewport) with no gaps",
+    "hero buttons: the reference Play/More Info are pill-shaped; the implementation's are square-cornered, and More Info has an added info icon",
+    "hero info block: the reference shows a LIVE badge with status line plus a dot-separated metadata row; the implementation shows a green % Match, a year and a synopsis paragraph instead",
+    "header nav: the reference highlights the active Home with a gray pill and uses larger, wider-spaced links; the implementation has no pill and uses small, cramped links",
+    "header right: the reference has a Kids icon with label before the avatar; the implementation omits it",
+    "hero top-right mute button and bottom-right 'New Episode' tag are present in the reference and absent in the implementation",
+    "row header: the reference has a segmented pagination indicator on the right; the implementation has none",
+    "implementation adds an outlined TV-14 rating box next to the buttons, which the reference doesn't have",
+    "background: the reference header and page use a warm gray gradient; the implementation is flat near-black"
+  ],
+  "fixes": [
+    "Move the nav into a solid, gradient-tinted header band (~96px), and render the hero as an inset card (~67px side margins, ~24px radius, soft shadow)",
+    "Change row tiles to rounded 16:9 landscape cards ~350px wide with ~10px gaps, and add a segmented page indicator right-aligned with the row title",
+    "Make the Play (white) and More Info (translucent gray) buttons pill-shaped, ~52px tall with bold ~20px labels, and remove the info icon",
+    "Replace the match %/synopsis/rating box with a red LIVE badge + status line and a dot-separated 'genre • year • seasons • rating' metadata row",
+    "Add a circular mute button at the hero's top right and a 'New Episode' tag with an icon at its bottom right",
+    "Add a gray pill highlight behind the active Home nav item, enlarge nav text to ~17px with wider spacing, and add a Kids icon + label before the avatar",
+    "Use a warm dark-gray gradient page background instead of pure black"
+  ],
+  "summary": "The nav, colour basics and hero-plus-row order are recognisably the same, but the implementation uses the old full-bleed, square-button, portrait-poster Netflix layout instead of the reference's inset rounded hero card, pill buttons and landscape tiles, and it lacks several hero badges and controls."
+}
+```

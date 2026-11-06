@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both show a centered dark modal over the dimmed browse page. The modal has a synopsis block, then an 'Episodes' header row, then a vertical list of episode rows (number | 16:9 thumbnail | title + duration + synopsis). The implementation's modal is much narrower: about 780px (x≈570–1350) against about 1085px (x≈418–1502) in the reference. That squeezes the rows, so the thumbnails are smaller and the synopsis column is narrower. The reference rows are taller (~145px) and separated by hairline dividers. The implementation rows are shorter (~96px) and spaced as separate tiles with gaps between them. The scroll position differs (the implementation still shows the title and buttons), which is acceptable.",
+      "fix": "Widen the modal to ~1085px (about 56% of the viewport) with ~54px inner padding. Make episode rows ~145px tall with the thumbnail at ~170×96 and a 16:9 aspect. Put the number column ~84px wide on the left and right-align the duration ~80px from the row's right edge."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Present: 'Episodes' heading, a right-side control in the episodes header, episode number, thumbnail, title, duration, synopsis, and the modal over the dimmed page. Different: the reference highlights only the first/current row with a lighter background and leaves the other rows transparent with bottom dividers. The implementation draws every row as a filled card and highlights row 2. The reference shows a circular play overlay on the hovered thumbnail, which the implementation lacks. The reference header's right side shows plain series-title text; the implementation shows a bordered Season select (acceptable for multi-season data, but styled as a native boxed select).",
+      "missing": [
+        "hairline dividers between episode rows",
+        "circular play-icon overlay on hovered episode thumbnail"
+      ],
+      "fix": "Make rows transparent with a 1px #404040 bottom border. Give only the current episode (row 1) a #333 background with a slight radius. On hover, show a centred circular outlined play icon over the thumbnail."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both are flat and dark. The reference list is divider-separated and airy, with a single highlighted row. The implementation uses stacked filled tiles with gaps and compact padding, which is denser and more card-like.",
+      "fix": "Remove per-row card fills and gaps and use dividers instead. Increase the row's vertical padding to ~25px. Keep the highlight only on the current row with a ~4px radius."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a #181818 modal on a dimmed backdrop with white text. The implementation's row cards are a slightly lighter gray on every row, and its synopsis and duration text is mid-gray. In the reference, the synopsis is light gray/near-white (#d2d2d2), the duration is white, and the episode number is white.",
+      "fix": "Make the synopsis #d2d2d2, the duration and episode number #fff, the row backgrounds transparent, and the active row #333."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans typeface. The reference episode titles are bold, ~17px. Its synopsis is ~15px with ~1.5 line height, and its duration is ~17px white. The episode number is ~26px light. The implementation's titles are regular weight. Its synopsis is ~12–13px gray, its duration is ~12px gray, and its number is gray. The reference 'Episodes' heading is ~26px bold, larger than the implementation's ~20px.",
+      "fix": "Episode title: 17px weight 700, white. Synopsis: 15px, line height 22px, #d2d2d2. Duration: 17px white. Number: 26px white. 'Episodes' heading: 26px bold."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Thumbnails are 16:9 cover crops with small radii in both, but the implementation's are smaller. The reference's hover play overlay (white outlined circle with a filled triangle) is absent.",
+      "fix": "Enlarge thumbnails to ~170×96 with a 4px radius. Add the outlined-circle play overlay on hover."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading matches, and so does the 'Nm' duration format. The right side of the header uses a 'Season 1' select where the reference shows the series title as text. This is data-dependent and minor.",
+      "fix": "When there is only one season, show the series title as plain text on the right of the Episodes header. Otherwise, style the season selector as a dark bordered dropdown."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "modal: implementation is ~780px wide; reference is ~1085px wide, giving larger rows and wider synopsis text",
+    "episode list: implementation renders every row as a filled tile with gaps; reference uses transparent rows separated by hairline dividers, with only the first row highlighted",
+    "episode rows: implementation title is regular weight, and synopsis and duration are small gray text; reference uses a bold title, ~15px light synopsis and white ~17px duration",
+    "episode rows: implementation rows (~96px) and thumbnails are smaller than the reference's (~145px rows, ~170px-wide thumbs)",
+    "episode thumbnail: reference shows a circular play overlay on hover; implementation shows none",
+    "Episodes header: implementation heading is smaller (~20px vs ~26px); right side is a boxed native select rather than plain text"
+  ],
+  "fixes": [
+    "Widen the modal to ~1085px and increase the inner padding to ~54px",
+    "Restyle episode rows: transparent background, 1px #404040 bottom divider, ~25px vertical padding, #333 background only on the current episode",
+    "Enlarge thumbnails to ~170×96 and add a hover play-circle overlay",
+    "Typography: title 17px bold white, synopsis 15px #d2d2d2, duration 17px white, number 26px white, 'Episodes' 26px bold",
+    "Restyle the season selector as a dark dropdown (or plain title text for single-season shows)"
+  ],
+  "summary": "The implementation has the same modal episode-list structure as the reference, but the modal is narrower and the rows are denser tiles rather than divider-separated rows, with weaker title and synopsis type and no hover play overlay."
+}
+```

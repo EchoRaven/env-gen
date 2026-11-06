@@ -1,0 +1,30 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.65, "notes": "Both have a top nav bar with the logo and links on the left and icons on the right, a left-aligned 'My List' heading, and a grid that starts at the left gutter. In the reference, the grid tiles are landscape 16:9 (~295x165) and start lower, at y≈300. The reference also shows a hover-expanded preview card (~440px wide) that overlaps the row. The implementation uses smaller portrait tiles (~168x252) placed right under the heading, with title captions below them. The nav in the implementation is more compact, with the links packed closer together.", "fix": "Change the grid tiles to landscape 16:9 at about 295x165 with an ~8px gap. Leave more vertical space between the heading and the row. Widen the nav link spacing to ~40px."},
+    "components": {"score": 0.5, "notes": "The nav items match: there are 7 links plus search, bell, avatar and caret. The reference shows an active-pill state on 'My List' and a 'Kids' profile entry, and the implementation has neither. The reference's hover preview card is also missing. That card has a muted video preview, a title logo, a play button, a rating pill (dislike, like, love) with an 'I like this' tooltip, a more-info chevron, maturity/runtime/HD badges and genre tags. The implementation adds an X remove button on every tile and text captions under the tiles, and the reference shows neither. The reference also shows a 'New Season' badge on a tile.", "missing": ["Active pill background on 'My List' nav item", "Kids profile link with icon", "Hover/expanded preview card", "Play button", "Rating pill (thumbs down/up/double up) with tooltip", "More-info chevron button", "Mute toggle on preview", "Maturity rating/runtime/HD metadata row", "Genre tags row with dot separators", "'New Season' tile badge", "Title-artwork lockup on tiles"]},
+    "style": {"score": 0.65, "notes": "Both are flat and dark with slightly rounded tiles. The reference uses an elevated card with a shadow, round outlined icon buttons and a pill-shaped active nav item. The implementation is flatter, has extra X overlay circles, and has text captions that the reference doesn't use.", "fix": "Remove the X overlays and the captions. Add a rounded active pill (bg #333) to the nav. Build the hover card on a #181818 surface with a soft shadow and circular outlined buttons."},
+    "color": {"score": 0.85, "notes": "Both use a near-black #141414 base, a red logo and white/light-grey text. The reference adds a grey active pill, a white play button and a red 'New Season' badge.", "fix": "Add a grey (#333) active nav pill and a red badge treatment on tiles."},
+    "typography": {"score": 0.7, "notes": "Both use a sans-serif. In the reference the heading 'My List' is regular weight (~36px), but the implementation sets it in bold. The reference nav links are larger (~18px), while the implementation's are ~15px.", "fix": "Set the 'My List' heading to regular weight at ~36px. Raise the nav link size to ~18px and render the active link semibold."},
+    "iconography": {"score": 0.6, "notes": "The search and bell line icons match. The reference uses a square, blue smiley-style avatar; the implementation uses a green avatar showing the letter 'V'. Its tiles are portrait posters, while the reference uses landscape stills with the title artwork drawn over them. The reference's thumbs and play icons are not present.", "fix": "Switch to landscape backdrop thumbnails with the title logo overlaid. Use the outlined thumbs and chevron icons inside circular buttons on the hover card."},
+    "copy": {"score": 0.85, "notes": "The nav labels and the 'My List' heading match. The 'Kids' label is missing.", "fix": "Add a 'Kids' label next to the profile area."}
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Grid tiles: the implementation uses small portrait posters with captions underneath. The reference uses large landscape 16:9 stills with title art over them and no captions.",
+    "Over the row: the reference shows an expanded hover preview card with play, rating pill, chevron, metadata and genre tags. The implementation has no preview card.",
+    "Tile corners: the implementation adds an X remove button to each tile, and the reference has none.",
+    "Header: the reference's 'My List' nav item has a rounded grey active pill, and the implementation only bolds the text.",
+    "Header right: the reference has a 'Kids' icon and label, and the implementation omits it.",
+    "Heading: the implementation's 'My List' is bold; the reference's is regular weight.",
+    "Nav links: the implementation's links are smaller and more tightly spaced than the reference's."
+  ],
+  "fixes": [
+    "Render My List tiles as landscape 16:9 backdrops (~295x165) with the title logo overlaid. Drop the text captions and the X buttons.",
+    "Add a hover-expanded card about 1.5x the tile width: video/backdrop with a mute button, then a row with a white circular play button, a dislike/like/love pill with an 'I like this' tooltip and a circular chevron on the right, then a metadata row (R badge, runtime, HD badge), then genre tags separated by dots.",
+    "Add a rounded grey active pill behind 'My List' in the nav, and increase the nav font size to ~18px with ~40px spacing.",
+    "Add a 'Kids' icon and label before the profile avatar.",
+    "Make the 'My List' heading regular weight at ~36px."
+  ],
+  "summary": "The nav chrome, heading and dark palette match, but the grid uses portrait posters with captions and X buttons where the reference has landscape tiles, and there is no hover preview card with play and rating controls."
+}

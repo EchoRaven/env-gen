@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1aa5b-60f1-7f13-ab40-640eceb3c8a8",
+ "num_turns": 63,
+ "commands": 30,
+ "usage": {
+  "input_tokens": 21854,
+  "cached_input_tokens": 9408,
+  "cache_write_input_tokens": 10976,
+  "output_tokens": 2767,
+  "reasoning_output_tokens": 342
+ },
+ "is_error": false,
+ "result": "\n\nDONE 30",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 61.7,
+ "_stderr": "Reading additional input from stdin...\n"
+}

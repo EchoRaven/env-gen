@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both have the same top bar: logo on the left, nav links, and search/bell/avatar on the right. Both put the account dropdown under the avatar at the top right. The page behind it is different. The reference has the menu open over the Browse by Languages grid, with a page title, a 'Select Your Preferences' dropdown and 16:9 tiles. The implementation opens it over the Home hero with a 'Trending Now' row of portrait posters. The menu panel is also narrower and shorter (about 220px wide vs about 275px).",
+      "fix": "Open the account menu over the Browse by Languages page (title on the left, preference selector on the right, grid of 16:9 tiles). Widen the dropdown to about 275px and give each item a row about 58px tall."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "The implementation has Manage Profiles, Account, a divider and Sign out of Netflix. The reference also has a Kids profile row with its avatar at the top of the menu, plus Transfer Profile and Help Center rows. In the reference every menu row has a leading icon. In the header the reference shows a Kids profile shortcut (avatar plus 'Kids' label) between the bell and the avatar, and the implementation does not. The implementation adds a 'PROFILE: VIS ONE' caption header that the reference doesn't have. The caret next to the avatar is drawn as a filled circular button instead of a small bare caret. The reference highlights the active nav item with a pill.",
+      "missing": ["Kids profile row with avatar in dropdown", "Transfer Profile item", "Help Center item", "leading icons on menu items", "Kids profile shortcut in header (avatar + label)", "pill highlight on active nav item"]
+    },
+    "style": {
+      "score": 0.55,
+      "notes": "Both menus are dark flat panels with a divider above Sign out. The reference panel has rounded corners (about 8px), a soft shadow, no visible border and roomy rows. The implementation's panel has square corners, a hairline border and tight rows. The reference shows the active nav item as a rounded grey pill, and the implementation uses bold text instead.",
+      "fix": "Give the dropdown an 8px radius and a soft shadow, and remove the hairline border. Increase row padding to about 16px vertically. Show the active nav item as a rounded grey pill."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a dark scheme with the red Netflix logo and white text, and both menu surfaces are near-black (#141414 to #1f1f1f). The reference's menu surface is a slightly lighter grey than the implementation's. The reference avatar is a blue smiley tile, while the implementation shows a green initial tile. The caret button in the implementation adds a grey circle.",
+      "fix": "Use a #1f1f1f-ish surface for the menu. Make the caret a plain white triangle with no circle behind it."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use a sans-serif font. The reference menu items are about 18px regular, while the implementation's are about 14px, and its uppercase grey caption doesn't exist in the reference. The reference nav labels are about 17px; the implementation's are about 14px, with Home in bold.",
+      "fix": "Set menu items to about 18px regular white and remove the uppercase caption. Set nav labels to about 17px."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "The reference puts an outline icon (about 24px) in front of every menu row: pencil, transfer, person and question mark. It also shows a Kids avatar tile in the menu. The implementation's menu has no icons or avatars. The header search and bell icons match.",
+      "fix": "Add outline icons to the menu rows: pencil (Manage Profiles), transfer (Transfer Profile), person (Account) and question-circle (Help Center). Add a rounded-square profile avatar for the Kids row, in the menu and in the header."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match the reference word for word. 'Kids', 'Transfer Profile' and 'Help Center' are missing. The implementation adds a 'PROFILE: VIS ONE' caption the reference doesn't have.",
+      "fix": "Remove the caption. List the items in this order: Kids, Manage Profiles, Transfer Profile, Account, Help Center, then a divider and Sign out of Netflix."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown: there is no Kids profile row with an avatar at the top, and no Transfer Profile or Help Center items",
+    "Account dropdown: none of the items have the leading outline icons the reference shows",
+    "Account dropdown: an uppercase 'PROFILE: VIS ONE' caption is added that the reference doesn't have",
+    "Header right: the Kids profile shortcut (avatar + 'Kids' label) between the bell and the avatar is missing",
+    "Background page: the menu opens over the Home hero and a portrait poster row instead of the Browse by Languages title, preference selector and 16:9 tile grid",
+    "Account dropdown: the panel has square corners and a hairline border, with small 14px text in tight rows; the reference has rounded corners, a shadow, 18px text and roomy rows",
+    "Header: the active nav item is bold text instead of a grey pill, and the 'Browse by Languages' label is hard to read over the hero",
+    "Avatar caret: drawn as a grey circular button instead of a small bare caret"
+  ],
+  "fixes": [
+    "Rebuild the dropdown items in this order: Kids (avatar), Manage Profiles (pencil), Transfer Profile (transfer icon), Account (person), Help Center (question-circle), then a divider and Sign out of Netflix",
+    "Remove the 'PROFILE: …' caption",
+    "Style the dropdown about 275px wide with an 8px radius, a soft shadow and no border, using 18px regular text, rows about 58px tall and 24px icons with a 16px gap",
+    "Add the Kids profile shortcut (avatar + label) to the header before the main avatar, and replace the caret circle with a small white triangle",
+    "Show the active nav item as a rounded grey pill and enlarge the nav labels to about 17px",
+    "Render the menu over the Browse by Languages page layout (title, 'Select Your Preferences' dropdown, 16:9 tile grid)"
+  ],
+  "summary": "The account dropdown sits in the right place and its core labels match, but it lacks the reference's icons, the Kids, Transfer Profile and Help Center rows, the header Kids shortcut and the rounded, roomy styling, and it opens over the wrong page."
+}
+```

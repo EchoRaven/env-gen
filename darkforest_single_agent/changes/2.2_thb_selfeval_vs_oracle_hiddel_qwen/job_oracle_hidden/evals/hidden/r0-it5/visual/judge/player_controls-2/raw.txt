@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The overall structure matches: a full-bleed player, a back arrow at top-left, a full-width scrubber near the bottom with the time at the right end, and a single control row with groups on the left and right. Differences: the reference's top-right flag is missing. The centred title slot in the control row is empty. The control row sits in the bottom ~3% of the screen instead of a ~10% band, and the scrubber hugs the controls more tightly.",
+      "fix": "Add a top-right report flag icon. Put a centred title block in the control row between the left and right groups. Raise the scrubber to ~88% of the height and the control row to ~94%, with ~48px icon hit areas."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: back, play/pause, back 10, forward 10, volume, scrubber, time, subtitles, an episodes-like list icon and fullscreen. Missing: the report flag, the centred show/episode title, and the next-episode button. Invented: a horizontal volume slider and an 'AD' audio-description button. The scrubber has no red progress fill, red thumb or lighter buffered segment.",
+      "missing": ["top-right report/flag icon", "centered title 'Show E# Episode title' in control row", "next-episode (play-skip) button", "red progress fill + red scrubber thumb", "buffered segment on the progress track"],
+      "fix": "Add the flag top-right, the centred title and a next-episode button before the episodes icon. Remove the inline volume slider and the AD button. Style the scrubber with a red filled portion, a red round thumb and a light-grey buffered segment over a dark-grey track."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are minimal, flat overlays with no chrome surfaces. The implementation's controls are much smaller and thinner, which makes the bar feel cramped and secondary next to the reference's bold, generous control row.",
+      "fix": "Scale the control icons to ~44–50px with ~50px gaps. Make the scrubber track ~3px with a ~14px thumb."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both use white icons on dark. The reference's only accent is the brand red on the progress fill and thumb; the implementation has no accent at all, with a grey track and a white thumb on the volume slider.",
+      "fix": "Use the brand red (#E50914) for the played portion and the thumb. Use light grey for the buffered portion and dark grey for the rest of the track."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "The time label is a small white sans in both, but the implementation uses an elapsed/total format. The centred title lockup is missing: bold show name, then a regular 'E1' and episode name, at ~20px.",
+      "fix": "Show remaining time only (e.g. '32:57') at the right of the scrubber. Add a centred title with the show name in bold and 'E1  Episode' in regular weight, ~20px, white."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Both use the same outline icon family (back, ±10 circles, speaker, subtitles bubble, fullscreen corners), but the implementation's icons are ~half size. The play icon is filled where the reference shows a heavy pause icon, a state difference. The episodes icon is a plain list instead of stacked cards, the speaker shows muted, and there is no next-episode or flag icon.",
+      "fix": "Enlarge the icons to ~48px with the '10' numerals legible. Use the stacked-cards icon for episodes. Add the skip-next (play-with-bar) and flag icons."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "There is little chrome copy. The time format differs ('0:00 / 0:00' vs a remaining-time countdown), the episode-title label is missing, and an 'AD' label has been added.",
+      "fix": "Render the remaining-time countdown and the 'Title E# Episode' label, and drop the AD label."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "bottom control row centre: the reference shows a centred 'The Hawk E1 The Hawk' title lockup; the implementation has nothing there",
+    "bottom-right controls: the reference's next-episode button (before the episodes icon) is missing; the implementation adds an 'AD' button and uses a plain list icon instead of the stacked-cards episodes icon",
+    "top-right: the reference's flag/report icon is missing in the implementation",
+    "scrubber: the reference has a red played fill, a red round thumb and a lighter buffered segment; the implementation has a plain thin grey line with no fill or thumb",
+    "bottom-left: the implementation adds a horizontal volume slider next to the speaker icon, which the reference does not have",
+    "control icons: the implementation's icons are about half the reference size (~25px vs ~50px), and the control row is pushed to the very bottom edge",
+    "time label: the implementation shows '0:00 / 0:00' elapsed/total; the reference shows only the remaining time"
+  ],
+  "fixes": [
+    "Add a centred title in the control row: bold show name followed by regular 'E#  Episode name', ~20px white",
+    "Add a next-episode button left of the episodes button, and swap the episodes icon to stacked cards",
+    "Add a flag/report icon at top-right, mirroring the back arrow",
+    "Restyle the scrubber with a red (#E50914) played fill, a ~14px red round thumb, a light-grey buffered segment and a dark-grey remainder",
+    "Remove the inline volume slider and the AD button",
+    "Scale the control icons to ~48px with wider spacing, and lift the scrubber and control row to leave ~40px of bottom padding",
+    "Show the remaining-time countdown at the right of the scrubber instead of elapsed/total"
+  ],
+  "summary": "The player has the same overall skeleton and icon family, but it's missing the centred title, next-episode and flag controls and the red scrubber. It also adds a volume slider and an AD button, and its controls are undersized."
+}
+```

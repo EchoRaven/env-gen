@@ -1,0 +1,45 @@
+services:
+  database:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: netflix
+      POSTGRES_USER: netflix
+      POSTGRES_PASSWORD: netflix
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../app/database/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netflix -d netflix"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build:
+      context: ../app/backend
+      dockerfile: Dockerfile
+    ports:
+      - "18000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://netflix:netflix@database:5432/netflix
+      MEDIA_DIR: /app/media
+      JWT_SECRET: netflix-clone-jwt-secret
+    volumes:
+      - ../app/assets:/app/media:ro
+    depends_on:
+      database:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../app/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "18080:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

@@ -1,0 +1,74 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.62,
+      "notes": "The top nav, the full-bleed hero, the left-aligned hero text block and the 'Gems for You' row below it all match the reference. The differences: in the reference, the 'Movies' heading and the Genres dropdown sit at the top-left, just under the nav at about y=130 and over the hero. The implementation puts them below the hero, above the row. The reference anchors the maturity rating and mute button to the right edge of the hero, but the implementation puts the rating inline after the buttons. The reference row uses landscape 16:9 tiles, about 6.5 per row. The implementation uses portrait poster tiles, about 11 per row. The implementation's hero also runs taller, which pushes the row lower.",
+      "fix": "Move the 'Movies' title and Genres dropdown to just below the nav, at the top-left over the hero (about y=130). Pin the mute button and the TV-14 rating to the right edge of the hero at the same height as the buttons. Switch row tiles to 16:9 landscape cards about 290px wide."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "Kids profile link (icon + 'Kids' label) in the top-right nav",
+        "Pill highlight on the active 'Movies' nav item",
+        "Top 10 badge with '#N in Movies Today' ranking line in the hero",
+        "Round mute/volume button on the right of the hero",
+        "Right-edge maturity rating tab with a left bar, in place of the inline boxed badge",
+        "Row page-indicator dashes at the top-right of the row",
+        "'TOP 10' corner badges and red 'Recently Added' labels on row tiles",
+        "Small Netflix 'N'/wordmark brand tag above the hero title"
+      ],
+      "notes": "The implementation has the nav items, search, bell, profile avatar with caret, Play and More Info buttons, the Genres dropdown and the content row. It is missing the Kids link, the Top 10 ranking line, the mute button, the rating tab, the tile badges and the page indicator. It adds a '87% Match · 2026' metadata line that the reference doesn't have, and it uses a native select for Genres where the reference has a custom black box with a white border.",
+      "fix": "Add the Kids link, the Top 10 badge with ranking text, the round mute button and the right-edge rating tab. Remove the match/year line. Add the TOP 10 and Recently Added overlays to tiles and the row page dashes. Restyle Genres as a black box with a 1px white border, white text and a white caret."
+    },
+    "style": {
+      "score": 0.72,
+      "notes": "Both are dark and cinematic, with a full-bleed hero and a bottom fade. Both have a white Play button and a translucent grey More Info button with small corner radii. The reference's active nav item is a translucent pill; the implementation shows it as bold text only. The reference's Genres control is square and outlined, while the implementation shows a rounded native select. The reference's buttons are larger, about 58px tall.",
+      "fix": "Add a rounded translucent pill behind the active nav item. Make the hero buttons about 58px tall with roughly 4px radius. Restyle the Genres control as square with an outline."
+    },
+    "color": {
+      "score": 0.78,
+      "notes": "The black base, red wordmark, white and grey buttons, and white text all match. The implementation adds a green '87% Match' that the reference doesn't use. The reference also has red accents on the TOP 10 badges and Recently Added labels, which the implementation lacks.",
+      "fix": "Remove the green match text. Use Netflix red (#E50914) for the Top 10 badges and the Recently Added labels."
+    },
+    "typography": {
+      "score": 0.68,
+      "notes": "Both use a sans-serif UI font and a condensed display title. In the reference the nav text is larger (about 17px) and grey, the active item is white, and the hero synopsis is larger (about 22px). The reference's 'Movies' page title is about 40px and sits at the top. The ranking line is about 28px semibold, and that size level is missing from the implementation. The implementation's nav and synopsis text are smaller.",
+      "fix": "Increase the nav text to about 17px grey (#e5e5e5 at reduced opacity), with the active item in white. Increase the synopsis to about 22px. Add a 28px semibold '#N in Movies Today' line. Set the page title to about 40px at the top."
+    },
+    "iconography": {
+      "score": 0.62,
+      "notes": "The line-style search and bell icons, filled play icon and outlined info icon all match. The avatar differs: the reference uses a blue rounded-square smiley profile icon, and the implementation uses a green letter 'V' square. The implementation's poster tiles are portrait (2:3); the reference's tiles are 16:9 landscape with title art. The reference also has a Kids icon and a mute icon that the implementation lacks.",
+      "fix": "Use 16:9 backdrop images with title art for the row tiles. Replace the letter avatar with an image-style profile icon. Add the Kids icon and the mute icon."
+    },
+    "copy": {
+      "score": 0.82,
+      "notes": "The nav labels, 'Movies', 'Genres', 'Play', 'More Info', 'Gems for You' and 'TV-14' all match. The implementation is missing the 'Kids' label and the '#N in Movies Today' copy, and it adds 'Match' copy that the reference doesn't have.",
+      "fix": "Add the 'Kids' label and the '#N in Movies Today' line. Remove '87% Match'."
+    }
+  },
+  "similarity": 0.64,
+  "empty_state": false,
+  "deviations": [
+    "Page header: the reference puts the 'Movies' title and Genres dropdown at the top-left, over the hero just below the nav. The implementation places them below the hero, above the first row.",
+    "Content row: the reference uses landscape 16:9 tiles (about 6.5 visible). The implementation uses portrait poster tiles (about 11 visible).",
+    "Hero, right side: the reference has a round mute button and a TV-14 tab anchored to the right edge. The implementation has no mute button and shows a small boxed TV-14 inline after the buttons.",
+    "Hero, under the title: the reference shows a Top 10 badge with '#3 in Movies Today'. The implementation shows a green '87% Match 2026' line instead.",
+    "Top nav: the reference's active 'Movies' item has a translucent pill background. The implementation shows bold text only.",
+    "Top-right nav: the reference has a Kids icon with the 'Kids' label. The implementation omits it.",
+    "Row tiles: the reference has TOP 10 corner badges and red 'Recently Added' labels. The implementation tiles have neither.",
+    "Genres control: the reference uses a black box with a white border and a white caret. The implementation uses a rounded native select.",
+    "Above the hero title: the reference has a small Netflix brand tag. The implementation has none.",
+    "Text sizes: the implementation's nav and synopsis text are noticeably smaller than the reference's."
+  ],
+  "fixes": [
+    "Move the 'Movies' title (about 40px) and the Genres dropdown to the top-left over the hero, about 130px from the top. Remove them from below the hero.",
+    "Change row tiles to 16:9 landscape cards about 290px wide with roughly 8px gaps. Add TOP 10 corner badges and red 'Recently Added' bottom labels where applicable.",
+    "Replace the match/year line with a red TOP 10 badge and '#N in Movies Today' at about 28px semibold.",
+    "Remove the inline TV-14 badge. Add a round outlined mute button and a right-edge rating tab (left white bar, translucent grey background) at the same height as the buttons.",
+    "Add a translucent rounded pill behind the active nav item. Increase the nav text to about 17px.",
+    "Add the Kids icon and 'Kids' label before the profile avatar.",
+    "Restyle Genres as a square black box with a 1px white border and a white caret.",
+    "Increase the hero synopsis to about 22px and the buttons to about 58px tall."
+  ],
+  "summary": "Netflix design language and nav are recognisable, but the page title and Genres dropdown are misplaced, row tiles are portrait instead of landscape, and the Top 10 line, mute button, rating tab, Kids link and tile badges are missing."
+}

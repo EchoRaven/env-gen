@@ -1,0 +1,73 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "The top nav matches: logo on the left, inline links, and search, bell and avatar on the right. The rest of the page differs. The 'New on Netflix' landscape row at the top of the reference is gone. The implementation's content gutter is about 155px, but the reference's rows sit at about 67px, in line with the logo. In the Top 10 rows the reference shows about 6.3 tiles, each a big rank numeral with a poster overlapping it, and each tile fills about 300px. The implementation packs 8 smaller pairs with wide empty gaps between them. Coming This Week is a landscape row in both. There is also a stray tiny element under the nav at the left.",
+      "fix": "Add a 'New on Netflix' row of 16:9 landscape tiles above Top 10 TV. Align all rows to the logo's left edge (about 67px). Size each Top 10 item at about 1/6.3 of the row width, with a numeral about 210px tall and a poster about 145×207 that overlaps the numeral's right half. Remove the stray element under the nav."
+    },
+    "components": {
+      "score": 0.5,
+      "missing": [
+        "'New on Netflix' row of landscape tiles",
+        "Red 'TOP 10' corner badges on tiles",
+        "Red status pill on tiles ('New Season' / 'Recently Added' / 'New Episode') at the bottom centre of the artwork",
+        "White 'Watch Now' pill next to 'New Episode'",
+        "Pill-shaped active-tab highlight behind 'New & Popular'",
+        "Kids profile switcher (avatar + 'Kids' label) in the header",
+        "Row pagination indicator (dashes, top-right of each row)"
+      ],
+      "notes": "Present: the nav with all 7 links, search, bell, profile avatar with caret, the Top 10 TV and Movies rows with numerals, and Coming This Week. Invented: a checkmark at the left edge of the movies row, a chevron overlay on the last movie tile, and a title/genre caption under each Coming This Week tile with a red '2026' badge that covers the genre text. The reference shows plain tiles with none of these.",
+      "fix": "Add the New on Netflix row. Put a TOP 10 badge in the top-right of each tile and a red status pill at the bottom centre. Add a rounded grey pill behind the active nav item, and add a Kids avatar + label before the profile. Add row pagination dashes. Remove the checkmark, chevron and the caption/'2026' badges under Coming This Week tiles."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both are flat, dark and full of imagery, with small radii. In the reference, the numerals and posters are dense, overlapping and large. The implementation is sparse, with small posters and lots of empty space. Its active nav item has no rounded pill.",
+      "fix": "Make the Top 10 pairs larger and denser with overlap. Add a rounded rgba(255,255,255,0.15) pill behind 'New & Popular'."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "The near-black #141414 base, white text and Netflix red match. The reference uses red mostly on badges and pills, which are missing here, and the implementation puts red on '2026' badges the reference doesn't have. The reference numerals are black with a grey stroke. The implementation's numerals are hollow, with a grey outline only.",
+      "fix": "Give the rank numerals a dark (#000) fill with a grey (#595959) stroke. Use red only for the TOP 10 badges and status pills."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use sans-serif. The reference's row headings are larger (about 28px) and regular to medium weight. The implementation's are about 22px semibold. Its nav text is smaller (about 15px vs 17px). Its rank numerals are condensed and narrow, where the reference uses wide, heavy, geometric numerals.",
+      "fix": "Set row headings to about 28px weight 500 and nav links to about 17px. Render the numerals in a heavy, wide sans at about 210px height."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "The search and bell line icons match, and so do the square avatar and caret. The reference has a red pill status badge and a TOP 10 badge on each tile. The implementation has neither, and adds a check icon and a chevron icon. Coming This Week tiles have the right landscape crop. Poster aspect in the Top 10 rows is about 2:3 in both.",
+      "fix": "Add the TOP 10 badges and status pills. Remove the extra check and chevron icons."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels and the headings 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week' match. The 'New on Netflix' heading, the 'Kids' label and the badge copy ('New Season', 'Recently Added', 'New Episode', 'Watch Now') are missing.",
+      "fix": "Add a 'New on Netflix' heading, a 'Kids' label, and badge text such as 'Recently Added' or 'New Season'."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Top of content: the reference's first row, 'New on Netflix' landscape tiles, is missing entirely",
+    "Top 10 rows: the reference shows about 6 large numeral+poster pairs with the poster overlapping the numeral. The implementation shows 8 small pairs with wide gaps and thin hollow condensed numerals",
+    "All tiles: the reference's red status pills ('Recently Added', 'New Season', 'New Episode' + 'Watch Now') and TOP 10 corner badges are absent",
+    "Content gutter: the implementation's rows start at about 155px, but the reference's start at about 67px, aligned with the logo",
+    "Header: the reference has a rounded pill highlight behind 'New & Popular' and a Kids avatar + label. The implementation shows only bold text and omits Kids",
+    "Coming This Week: the implementation adds title/genre captions and red '2026' badges that overlap the text. The reference has bare tiles",
+    "Movies row: an invented checkmark at the left edge and a chevron overlay on the last tile",
+    "Row headings are smaller and bolder than in the reference. Row pagination dashes at top-right are missing",
+    "A stray tiny element under the nav at the top-left"
+  ],
+  "fixes": [
+    "Insert a 'New on Netflix' row of 16:9 landscape tiles (about 290×165) above the Top 10 TV row",
+    "Rebuild the Top 10 tiles at about 300px per item: a heavy wide numeral about 210px tall, black fill with grey stroke, and a 2:3 poster overlapping its right half. Show about 6.3 items per row",
+    "Overlay a red status pill at the bottom centre of each tile and a red 'TOP 10' badge in the top-right corner",
+    "Align all rows and headings to the logo's left edge (about 67px). Set headings to about 28px medium weight",
+    "Add a rounded grey pill behind the active 'New & Popular' nav item and enlarge the nav text to about 17px. Add a Kids avatar + 'Kids' label before the profile avatar",
+    "Remove the captions and '2026' badges under Coming This Week tiles, the checkmark and chevron overlays, and the stray element under the nav",
+    "Add row pagination dashes at the top-right of each row"
+  ],
+  "summary": "The nav and the Top 10 / Coming This Week sections are recognisably the same design, but the 'New on Netflix' row, the Top 10 numeral treatment at the right scale, the tile badges, the Kids switcher and the active-tab pill are missing, and the implementation adds caption badges the reference doesn't have."
+}
+```

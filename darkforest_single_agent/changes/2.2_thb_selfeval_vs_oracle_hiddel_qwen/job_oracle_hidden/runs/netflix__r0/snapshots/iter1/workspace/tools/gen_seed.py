@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""Generate app/database/init/01_schema.sql and 02_seed.sql from the real dataset."""
+import json
+import os
+import re
+import hashlib
+import hmac
+
+ROOT = "/workspace"
+DS = os.path.join(ROOT, "app/dataset/titles.json")
+OUT = os.path.join(ROOT, "app/database/init")
+
+CLIPS = [
+    "clip_18972999.mp4",
+    "clip_27152549.mp4",
+    "clip_27152555.mp4",
+    "clip_30070091.mp4",
+    "clip_30997958.mp4",
+    "clip_35079542.mp4",
+]
+
+EP_NAMES = [
+    "Pilot", "The Arrival", "Under Current", "A Quiet Line", "Signal Lost",
+    "The Long Road", "Paper Walls", "Night Crossing", "The Counterfeit",
+    "Static", "Second Wind", "The Archive", "Broken Compass", "Half Light",
+    "The Undertow", "Falling Forward", "The Exchange", "Cold Storage",
+    "The Periphery", "Ember", "The Cartographer", "Last Light", "The Reckoning",
+    "Whiteout", "The Inheritance", "Crossing Point", "The Ledger", "Ashes of Us",
+    "The Verge", "Homecoming Wire", "The Threshold", "Final Coordinate",
+]
+
+def esc(s):
+    if s is None:
+        return "NULL"
+    return "'" + str(s).replace("'", "''") + "'"
+
+def duration_for(kind, tid):
+    if kind == "movie":
+        mins = 88 + (tid * 7) % 68
+    else:
+        mins = 40 + (tid * 5) % 18
+    return mins * 60
+
+def main():
+    titles = json.load(open(DS))
+    os.makedirs(OUT, exist_ok=True)
+
+    schema = []
+    schema.append("""-- Netflix clone schema (Postgres 16)
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    avatar TEXT NOT NULL DEFAULT 'avatar_0',
+    is_kids BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS genres (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS titles (
+    id BIGINT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    year TEXT NOT NULL,
+    genre TEXT,
+    maturity_rating TEXT,
+    rating DOUBLE PRECISION,
+    synopsis TEXT,
+    language TEXT,
+    poster TEXT,
+    backdrop TEXT,
+    video_url TEXT,
+    duration INTEGER,
+    top10_rank INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+    season INTEGER NOT NULL,
+    number INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    synopsis TEXT,
+    duration INTEGER,
+    thumbnail TEXT
+);
+
+CREATE TABLE IF NOT EXISTS title_genres (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+    genre_id INTEGER NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
+    UNIQUE (title_id, genre_id)
+);
+
+CREATE TABLE IF NOT EXISTS my_list (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+    UNIQUE (profile_id, title_id)
+);
+
+CREATE TABLE IF NOT EXISTS ratings (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+    value INTEGER NOT NULL CHECK (value IN (1, 2, 3)),
+    UNIQUE (profile_id, title_id)
+);
+
+CREATE TABLE IF NOT EXISTS continue_watching (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+    progress_seconds INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (profile_id, title_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_titles_kind ON titles (kind);
+CREATE INDEX IF NOT EXISTS ix_titles_rating ON titles (rating);
+CREATE INDEX IF NOT EXISTS ix_titles_year ON titles (year);
+CREATE INDEX IF NOT EXISTS ix_episodes_title ON episodes (title_id);
+CREATE INDEX IF NOT EXISTS ix_profiles_user ON profiles (user_id);
+""")
+    with open(os.path.join(OUT, "01_schema.sql"), "w") as f:
+        f.write("\n".join(schema))
+
+    # genres from the dataset
+    genre_names = []
+    for t in titles:
+        for g in (t.get("genres") or []):
+            if g and g not in genre_names:
+                genre_names.append(g)
+    genre_id = {g: i + 1 for i, g in enumerate(genre_names)}
+
+    seed = ["-- Seed data generated from dataset/titles.json"]
+
+    # demo user with PBKDF2 password hash of 'demo1234'
+    salt = "0123456789abcdef0123456789abcdef"
+    pw_hash = hashlib.pbkdf2_hmac("sha256", b"demo1234", bytes.fromhex(salt), 200000).hex()
+    seed.append(
+        "INSERT INTO users (id, email, password_hash, name) VALUES "
+        f"(1, 'demo@netflix.example', 'pbkdf2_sha256$200000${salt}${pw_hash}', 'Demo User');"
+    )
+    seed.append(
+        "INSERT INTO profiles (id, user_id, name, avatar, is_kids) VALUES "
+        "(1, 1, 'Alex', 'avatar_0', FALSE), "
+        "(2, 1, 'Priya', 'avatar_1', FALSE), "
+        "(3, 1, 'Kids', 'avatar_2', TRUE);"
+    )
+
+    # top10 ranks per kind
+    by_kind = {"movie": [], "series": []}
+    for t in titles:
+        by_kind.setdefault(t["kind"], []).append(t)
+    rank_map = {}
+    for kind, group in by_kind.items():
+        for rank, t in enumerate(sorted(group, key=lambda x: (-x["rating"], x["id"]))[:10], start=1):
+            rank_map[t["id"]] = rank
+
+    title_rows = []
+    ep_rows = []
+    tg_rows = []
+    for t in titles:
+        tid = t["id"]
+        backdrop = t.get("backdrop")
+        if not backdrop or not os.path.exists(os.path.join(ROOT, "design", backdrop)):
+            backdrop = t.get("poster")
+        clip = CLIPS[tid % len(CLIPS)]
+        video_url = "/media/video/" + clip
+        top10 = rank_map.get(tid)
+        genre = t.get("genre")
+        title_rows.append(
+            "(%d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s)" % (
+                tid, esc(t["name"]), esc(t["kind"]), esc(t["year"]), esc(genre),
+                esc(t.get("maturity_rating")),
+                ("%s" % t["rating"]) if t.get("rating") is not None else "NULL",
+                esc(t.get("synopsis")), esc(t.get("language")), esc(t.get("poster")), esc(backdrop),
+                esc(video_url), duration_for(t["kind"], tid),
+                str(top10) if top10 else "NULL",
+            )
+        )
+        for g in (t.get("genres") or []):
+            if g in genre_id:
+                tg_rows.append("(%d, %d)" % (tid, genre_id[g]))
+        if t["kind"] == "series":
+            seasons = 2 + (tid % 3)
+            for s in range(1, seasons + 1):
+                eps = 6 + (tid + s) % 3
+                for n in range(1, eps + 1):
+                    name = EP_NAMES[(tid * 3 + s * 5 + n) % len(EP_NAMES)]
+                    ep_rows.append(
+                        "(%d, %d, %d, %s, %s, %d, %s)" % (
+                            tid, s, n, esc(name), esc(t.get("synopsis")),
+                            1800 + (tid * 13 + s * 7 + n * 11) % 2100,
+                            esc(backdrop or t.get("poster")),
+                        )
+                    )
+
+    seed.append(
+        "INSERT INTO genres (id, name) VALUES " +
+        ", ".join("(%d, %s)" % (i + 1, esc(g)) for i, g in enumerate(genre_names)) + ";"
+    )
+    seed.append(
+        "INSERT INTO titles (id, name, kind, year, genre, maturity_rating, rating, synopsis, language, poster, backdrop, video_url, duration, top10_rank) VALUES " +
+        ",\n".join(title_rows) + ";"
+    )
+    seed.append(
+        "INSERT INTO title_genres (title_id, genre_id) VALUES " + ", ".join(tg_rows) + ";"
+    )
+    seed.append(
+        "INSERT INTO episodes (title_id, season, number, name, synopsis, duration, thumbnail) VALUES " +
+        ",\n".join(ep_rows) + ";"
+    )
+
+    seed.append(
+        "INSERT INTO my_list (profile_id, title_id) VALUES "
+        "(1, 3), (1, 7), (1, 11), (1, 14), (2, 2), (2, 9);"
+    )
+    seed.append(
+        "INSERT INTO ratings (profile_id, title_id, value) VALUES "
+        "(1, 2, 3), (1, 5, 2), (1, 8, 1), (2, 4, 2);"
+    )
+    seed.append(
+        "INSERT INTO continue_watching (profile_id, title_id, progress_seconds) VALUES "
+        "(1, 2, 28), (1, 5, 41), (1, 8, 12), (2, 4, 33);"
+    )
+    # Explicit ids above don't advance identity sequences; realign them so
+    # future INSERTs (register/create-profile) don't collide.
+    for table in ["users", "profiles", "genres", "title_genres", "my_list", "ratings", "continue_watching", "episodes"]:
+        seed.append(
+            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+            f"(SELECT COALESCE(MAX(id), 0) + 1 FROM {table}));"
+        )
+
+    with open(os.path.join(OUT, "02_seed.sql"), "w") as f:
+        f.write("\n\n".join(seed) + "\n")
+
+    print("genres:", len(genre_names), "titles:", len(title_rows), "episodes:", len(ep_rows),
+          "title_genres:", len(tg_rows))
+    print("OK")
+
+if __name__ == "__main__":
+    main()
