@@ -1,0 +1,75 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.65,
+      "notes": "Both have the same top nav: logo on the left, 7 links, and utility icons on the right. Both have a left-aligned 'My List' heading over a left-aligned row of tiles on a dark page. The reference uses landscape 16:9 tiles about 295px wide with an ~8px gap, starting near y=300. It also shows an expanded hover card (about 440px wide) open over the row. The implementation uses portrait tiles about 167x250 starting at y=220, has a subtitle line, and puts a Remove bar under each tile. Its left gutter is ~79px against ~67px in the reference.",
+      "fix": "Make the tiles landscape 16:9, about 295x165, with an 8px gap. Line the heading and row up with the logo at a ~67px gutter. Remove the subtitle and the per-tile Remove bars. Add the hover-expand card that scales up over the row."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The nav inventory matches: 7 links, search, bell, profile avatar and caret. Missing: the 'Kids' profile link with its icon, the pill highlight on the active 'My List' link, and the hover preview card. That card has a play button, a rating group (thumbs down / thumbs up / double thumbs up) with an 'I like this' tooltip, a mute toggle, a circular chevron 'more info' button, a maturity badge with duration and an HD badge, and a genre row separated by dots. Also missing are the title-logo overlay on landscape art, the small N brand badge, and the red 'New Season' tag. Added that the reference doesn't have: the 'Saved to your profile, 4 titles.' subtitle and the 'Remove' buttons under each tile.",
+      "missing": [
+        "Kids profile link with icon in header",
+        "pill-shaped active state on 'My List' nav item",
+        "hover/expanded preview card",
+        "circular play button",
+        "rating pill (thumbs down / thumbs up / love) with tooltip",
+        "mute toggle on preview",
+        "circular chevron 'more info' button",
+        "maturity rating badge + duration + HD badge row",
+        "genre tags row with dot separators",
+        "'New Season' red badge on tile",
+        "Netflix 'N' badge on artwork"
+      ],
+      "fix": "Build a hover card: a 16:9 preview with the title logo and a mute button, then a row with a white circular play button, a dark pill holding three rating icons with a tooltip, and an outlined circular chevron on the right. Under that, add a metadata row (outlined rating box, duration, HD badge) and a genre row with dots. Add the Kids link and the pill-shaped active nav state. Drop the Remove bars and the subtitle."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat and dark with minimal decoration. The reference tiles have slightly rounded corners (~4px), and its hover card is rounded with a raised dark-grey surface and a shadow. The implementation uses square tiles with boxy bordered Remove bars, which reads as more utilitarian. The active nav item in the reference is a filled grey pill.",
+      "fix": "Round the tile corners to ~4px. Add the raised #181818 hover card with ~6px radius and a soft shadow. Remove the bordered Remove boxes. Give the active nav link a rounded grey pill background (~#333)."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a #141414 base, white text, and the red Netflix brand colour, so the palette matches. The implementation is missing the grey active-nav pill, the #181818 card surface, and the red 'New Season' accent. Its nav links are a dimmer grey, with the active link shown only as bold white.",
+      "fix": "Add the ~#333 active-nav pill, the #181818 hover-card surface, and red badge accents on tiles."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "The reference uses Netflix Sans: the 'My List' heading is regular weight at ~34px, and the nav is ~17px regular. The implementation's heading is a heavy bold at ~50px, and the nav and body text fall back to Arial/Helvetica. It also adds a small grey subtitle.",
+      "fix": "Set the heading to ~34px regular (weight 400–500) in Netflix Sans or a close geometric sans like Inter or Helvetica Neue. Set the nav to ~17px, and remove the subtitle."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The search and bell icons are similar outline icons. The reference avatar is a blue rounded square with a smiley face, and there's a Kids icon beside it. The implementation shows a generic person silhouette. The reference artwork is landscape with the title logo overlaid; the implementation uses portrait posters. The reference also has outline thumb icons and circular outlined buttons, which the implementation lacks.",
+      "fix": "Switch to landscape backdrop art with the title logo at the bottom left. Use a rounded-square avatar with the smiley and add the Kids icon. Use outline thumb, chevron and mute icons inside circular buttons on the hover card."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels and the 'My List' heading match exactly. The implementation adds copy the reference doesn't have: 'Saved to your profile, 4 titles.' and 'Remove'. It's missing 'Kids', 'I like this' and 'New Season'.",
+      "fix": "Remove the subtitle and the 'Remove' labels. Add 'Kids' in the header and the 'I like this' / 'Not for me' / 'Love this!' rating tooltips."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Center of screen: the reference shows an expanded hover preview card (play button, rating pill with tooltip, chevron, mute, metadata and genre rows), and the implementation has nothing comparable",
+    "Tile row: the reference uses landscape 16:9 backdrop tiles with title-logo overlays; the implementation uses portrait 2:3 posters",
+    "Under each tile: the implementation adds bordered 'Remove' bars that the reference doesn't have",
+    "Header right: the reference has a 'Kids' icon and label before the avatar; the implementation leaves it out",
+    "Header nav: the reference shows active 'My List' as a filled grey pill; the implementation just bolds the text",
+    "Heading: the implementation's 'My List' is heavy bold at ~50px; the reference is regular weight at ~34px",
+    "Below heading: the implementation adds a 'Saved to your profile, 4 titles.' subtitle the reference doesn't have",
+    "Tiles: the reference has the red 'New Season' badge and N brand badge; the implementation has neither",
+    "Avatar: the implementation shows a generic person silhouette instead of the blue rounded-square smiley avatar"
+  ],
+  "fixes": [
+    "Switch the tiles to landscape 16:9 (~295x165), 8px gap, ~4px radius, with the title logo overlaid at the bottom left of each backdrop",
+    "Remove the per-tile 'Remove' bars and the subtitle line",
+    "Add a hover-expand card on tiles: a #181818 rounded surface with shadow and a 16:9 preview with mute button. Below it, a white circular play button, a dark pill with thumbs down / up / double-up icons and a tooltip, and an outlined circular chevron on the right. Then a row with an outlined maturity box, duration and HD badge, and a genre row with dot separators",
+    "Restyle the heading 'My List' to ~34px regular weight, aligned to the logo's ~67px gutter",
+    "Give the active nav link a rounded grey (#333) pill background",
+    "Add the Kids icon and label before the avatar, and use a rounded-square smiley avatar",
+    "Add the red 'New Season' badge and N badge treatments on tiles"
+  ],
+  "summary": "The nav, heading and dark palette match, but the implementation uses portrait poster tiles with Remove bars where the reference has landscape tiles and an expanded hover preview card, and it misses the Kids link and the pill-shaped active nav state."
+}

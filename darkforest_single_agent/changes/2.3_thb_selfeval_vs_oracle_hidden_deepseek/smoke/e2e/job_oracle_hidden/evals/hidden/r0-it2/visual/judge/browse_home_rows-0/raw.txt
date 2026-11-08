@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.62,
+      "notes": "Both have a top nav bar with the logo on the left, links in the middle and icons on the right, then stacked titled rows of horizontal 16:9 carousels. The tile size (5 visible tiles plus a peek of the 6th at the right edge) and the ~64px left gutter match. Differences: the reference shows only rows directly under a solid black header (~88px tall). The implementation still shows the bottom of a hero (synopsis text plus Play/More Info buttons) above the first row. Its header is shorter (~68px) and partly see-through. Two rows ('Continue Watching for You', 'Games') render as full-width empty boxes, which breaks the steady row rhythm. Gaps between tiles are slightly tighter than the reference's ~10px.",
+      "fix": "In this browse-rows state, start the page directly with rows below a solid #141414 header ~88px tall (no hero remnant). Keep a constant gap between rows (~56px heading-to-heading spacing around 286px tiles). Hide rows that have no items instead of rendering empty boxes."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: logo, 7 nav links, search, bell, avatar with caret, row headings, carousels with a partly visible tile at the right edge. Missing: the rounded pill highlight on the active 'Home' link; the 'Kids' profile entry (kids icon + label); the segmented page-indicator dashes at the top-right of each row; the boxed 'BETA' chip next to 'Games'; the red 'TOP 10' corner badges; the red/white bottom-centre status pills ('New Season', 'New Episode', 'Recently Added', 'Watch Now'). Extra: plain-text title captions on tiles; hero Play/More Info buttons; 'Nothing to show here yet' empty panels.",
+      "missing": ["Active 'Home' pill highlight", "Kids profile entry in header", "Row page-indicator dashes (top-right of each row)", "'BETA' chip beside Games heading", "TOP 10 corner badges on tiles", "Bottom-centre status pills (New Season / New Episode / Recently Added / Watch Now)", "Rendered Games row tiles"]
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Same flat, dark streaming look with full-bleed artwork tiles. Reference tiles have clearly rounded corners (~8px); implementation tiles are square. Reference has no text overlay or gradient on tiles (the title is part of the artwork); implementation adds a bottom text caption with a shadow. The bordered empty-state boxes are foreign to the reference.",
+      "fix": "Give tiles border-radius ~8px with overflow hidden. Remove the caption overlay and its gradient. Remove the bordered empty-state panels."
+    },
+    "color": {
+      "score": 0.78,
+      "notes": "Dark #141414 base, Netflix red wordmark, white text: all match. Reference header is a solid near-black slightly darker than the page; implementation header is translucent over the hero. The red/white badge accents and the purple-outlined BETA chip are absent, so the implementation looks flatter. The active link's grey pill (#333-ish) is missing.",
+      "fix": "Solid #0f0f0f header. Add red (#E50914) TOP 10 and status pills with a white 'Watch Now' variant, the purple-outlined BETA chip, and a grey (#333) pill behind the active nav item."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Sans-serif throughout, with large left-aligned row headings and small nav links. Reference headings are medium weight (~26px, Netflix Sans-like geometric); implementation headings are heavier bold Arial/Helvetica. The active 'Home' is bold in both, but the reference sets it inside a pill. The nav text in the implementation is a little smaller.",
+      "fix": "Use a geometric sans (Netflix Sans / Inter fallback) at weight 500, ~26px, for row headings. Set nav links at ~17px regular, with 'Home' at weight 600 inside the pill."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Search and bell outline icons match. Reference avatar is a blue rounded-square smiley with a small filled caret; implementation uses a generic person silhouette. The Kids rainbow icon is missing. Tile imagery has the same 16:9 cover crop, but the corners are square and there is no badge iconography (TOP 10 stacked lockup).",
+      "fix": "Use a rounded-square smiley profile avatar with a solid ▼ caret. Add the Kids icon. Add rounded tile corners and the stacked 'TOP 10' red badge in the top-right of the tile."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages). Row headings 'TV Action & Adventure', 'Games', 'Only on Netflix' match. Missing: 'Kids', 'BETA', and the badge copy ('New Season', 'Recently Added', 'Watch Now', 'TOP 10'). Extra: 'Nothing to show here yet.', and 'Continue Watching for You' / 'Trending Now' rows sit where the reference starts with TV Action & Adventure.",
+      "fix": "Add the 'Kids' label and 'BETA' chip text. Render the badge labels on tiles. Drop the empty-state copy."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "Games row: implementation shows a 'Nothing to show here yet.' bordered box where the reference shows a full carousel of game tiles; the same happens for 'Continue Watching for You'",
+    "Tiles: reference tiles carry red bottom-centre status pills (New Season / New Episode / Recently Added) and white 'Watch Now' pills; implementation tiles have none",
+    "Tiles: reference shows red 'TOP 10' corner badges at top-right; implementation has none",
+    "Tiles: implementation overlays plain bold text titles bottom-left; reference has no caption overlay",
+    "Tile corners: reference ~8px rounded; implementation square",
+    "Row headers (right side): reference shows segmented page-indicator dashes aligned to the right edge of each row; implementation has none",
+    "Games heading: reference has a purple-outlined spaced 'BETA' chip; implementation has plain 'Games'",
+    "Header: reference wraps active 'Home' in a grey rounded pill; implementation only bolds it",
+    "Header right: reference has a 'Kids' icon + label before the avatar; implementation omits it, and its avatar is a generic person instead of a rounded-square smiley",
+    "Top of page: implementation shows the bottom of a hero (synopsis plus Play/More Info buttons) above the rows; the reference state is rows only, directly under a solid header",
+    "Header bar: reference is a solid black band ~88px tall; implementation is ~68px and translucent",
+    "Row headings: implementation uses heavier bold system sans; reference uses medium-weight geometric sans"
+  ],
+  "fixes": [
+    "Make the Games and Continue Watching rows render real tiles (seed the data), or hide empty rows; never show the 'Nothing to show here yet' boxes",
+    "Remove the text-title overlay from tiles and give them border-radius 8px",
+    "Add tile badges: red 'TOP 10' stacked badge at top-right, and red/white status pills ('New Season', 'New Episode', 'Recently Added', 'Watch Now') centred on the bottom edge",
+    "Add segmented page-indicator dashes at the right end of each row heading line",
+    "Add the purple-outlined letter-spaced 'BETA' chip after the Games heading",
+    "Header: solid near-black background ~88px tall; grey rounded pill behind the active 'Home'; add the 'Kids' icon + label; use a rounded-square smiley avatar with a filled caret",
+    "For the browse-rows state, start the page with the first row directly below the header (no hero remnant visible)",
+    "Set row headings to a geometric sans at weight 500, ~26px"
+  ],
+  "summary": "Same Netflix nav and 16:9 carousel skeleton, but tile treatment is off (square corners, text captions, no TOP 10 or status badges), row indicators, BETA chip, Kids entry and active-pill are missing, and two rows render as empty boxes."
+}
+```

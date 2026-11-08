@@ -1,0 +1,197 @@
+{
+ "account": "tour278083@example.com",
+ "log": [
+  {
+   "step": 1,
+   "name": "add_profile_dialog",
+   "url": "http://127.0.0.1:16000/profiles"
+  },
+  {
+   "profile_created": "http://127.0.0.1:16000/profiles"
+  },
+  {
+   "step": 2,
+   "name": "after_profile_create",
+   "url": "http://127.0.0.1:16000/profiles"
+  },
+  {
+   "home": "http://127.0.0.1:16000/browse"
+  },
+  {
+   "step": 3,
+   "name": "home",
+   "url": "http://127.0.0.1:16000/browse"
+  },
+  {
+   "step": 4,
+   "name": "home_rows",
+   "url": "http://127.0.0.1:16000/browse"
+  },
+  {
+   "nav_links": [
+    [
+     "Home",
+     "/browse"
+    ],
+    [
+     "Shows",
+     "/shows"
+    ],
+    [
+     "Movies",
+     "/movies"
+    ],
+    [
+     "Games",
+     "/games"
+    ],
+    [
+     "New & Popular",
+     "/new"
+    ],
+    [
+     "My List",
+     "/my-list"
+    ],
+    [
+     "Browse by Languages",
+     "/browse/languages"
+    ]
+   ]
+  },
+  {
+   "step": 5,
+   "name": "nav_home",
+   "url": "http://127.0.0.1:16000/browse"
+  },
+  {
+   "step": 6,
+   "name": "nav_shows",
+   "url": "http://127.0.0.1:16000/shows"
+  },
+  {
+   "step": 7,
+   "name": "nav_movies",
+   "url": "http://127.0.0.1:16000/movies"
+  },
+  {
+   "step": 8,
+   "name": "nav_games",
+   "url": "http://127.0.0.1:16000/games"
+  },
+  {
+   "step": 9,
+   "name": "nav_new_popular",
+   "url": "http://127.0.0.1:16000/new"
+  },
+  {
+   "step": 10,
+   "name": "nav_my_list",
+   "url": "http://127.0.0.1:16000/my-list"
+  },
+  {
+   "step": 11,
+   "name": "nav_browse_by_languages",
+   "url": "http://127.0.0.1:16000/browse/languages"
+  },
+  {
+   "cards_on_home": 79
+  },
+  {
+   "step": 12,
+   "name": "card_hover",
+   "url": "http://127.0.0.1:16000/browse"
+  },
+  {
+   "step": 13,
+   "name": "card_click",
+   "url": "http://127.0.0.1:16000/title/25"
+  },
+  {
+   "play_buttons_on_home": 2
+  },
+  {
+   "hero_play": {
+    "url": "http://127.0.0.1:16000/watch/22",
+    "video": {
+     "src": "http://127.0.0.1:16000/assets/video/clip_27152555.mp4",
+     "t": 0,
+     "paused": true,
+     "err": 4
+    }
+   }
+  },
+  {
+   "step": 14,
+   "name": "hero_play",
+   "url": "http://127.0.0.1:16000/watch/22"
+  },
+  {
+   "step": 15,
+   "name": "title__browse_title_48",
+   "url": "http://127.0.0.1:16000/browse?title=48"
+  },
+  {
+   "route": "/browse?title=48",
+   "dialog": 0,
+   "visible_play": 1
+  },
+  {
+   "title_play": {
+    "from": "/browse?title=48",
+    "url": "http://127.0.0.1:16000/watch/22",
+    "changed": true,
+    "video": {
+     "src": "http://127.0.0.1:16000/assets/video/clip_27152555.mp4",
+     "t": 0,
+     "paused": true,
+     "err": 4
+    }
+   }
+  },
+  {
+   "step": 16,
+   "name": "title_play__browse_title_48",
+   "url": "http://127.0.0.1:16000/watch/22"
+  },
+  {
+   "step": 17,
+   "name": "title__title_48",
+   "url": "http://127.0.0.1:16000/title/48"
+  },
+  {
+   "route": "/title/48",
+   "dialog": 1,
+   "visible_play": 1
+  },
+  {
+   "title_play": {
+    "from": "/title/48",
+    "url": "http://127.0.0.1:16000/watch/48",
+    "changed": true,
+    "video": {
+     "src": "http://127.0.0.1:16000/assets/video/clip_35079542.mp4",
+     "t": 0,
+     "paused": true,
+     "err": 4
+    }
+   }
+  },
+  {
+   "step": 18,
+   "name": "title_play__title_48",
+   "url": "http://127.0.0.1:16000/watch/48"
+  },
+  {
+   "step": 19,
+   "name": "languages_menu",
+   "url": "http://127.0.0.1:16000/browse/languages"
+  },
+  {
+   "step": 20,
+   "name": "languages_page",
+   "url": "http://127.0.0.1:16000/browse/languages"
+  }
+ ],
+ "console_errors": []
+}

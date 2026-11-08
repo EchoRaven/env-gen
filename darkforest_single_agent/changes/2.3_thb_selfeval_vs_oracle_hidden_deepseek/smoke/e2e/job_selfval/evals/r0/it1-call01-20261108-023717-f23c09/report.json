@@ -1,0 +1,69 @@
+{
+ "passed": false,
+ "summary": "FAILED: docker_up",
+ "checks": [
+  {
+   "name": "frontend_navigable",
+   "status": "pass",
+   "detail": "33 page component(s), 19 route(s)",
+   "sec": 0.0
+  },
+  {
+   "name": "frontend_fallback_pages",
+   "status": "pass",
+   "detail": "0/17 pages are framework fallback ()",
+   "sec": 0.0
+  },
+  {
+   "name": "docker_up",
+   "status": "fail",
+   "detail": "docker build FAILED (attempt 2/2). Transcript tail:\nSending build context to Docker daemon  6.657kB\n\nStep 1/9 : FROM python:3.12-slim\n ---> 6b25cbe65775\nStep 2/9 : ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n ---> Using cache\n ---> fca335b10e32\nStep 3/9 : WORKDIR /app\n ---> Using cache\n ---> d8266e270caa\nStep 4/9 : COPY requirements.txt .\n ---> Using cache\n ---> 193410468211\nStep 5/9 : RUN pip install --no-cache-dir -r requirements.txt\n ---> Using cache\n ---> 2d9dbe33f924\nStep 6/9 : COPY *.py .\n\n Image thbval-backend Building \n Image thbval-backend Building \nWhen using COPY with more than one source file, the destination must be a directory and end with a /",
+   "sec": 10.35,
+   "steps": [
+    {
+     "name": "lease_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "lock_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "stage_assets",
+     "sec": 0.01
+    },
+    {
+     "name": "repair_params",
+     "sec": 0.0
+    },
+    {
+     "name": "localize_seed",
+     "sec": 0.0
+    },
+    {
+     "name": "down_v",
+     "sec": 0.05
+    },
+    {
+     "name": "build",
+     "sec": 10.17
+    }
+   ]
+  }
+ ],
+ "backend_port": null,
+ "endpoints": [],
+ "chains": [],
+ "_wrapper": {
+  "framework_modified_files": [],
+  "wall_s": 11.3,
+  "metrics": {
+   "checks_passed": 2,
+   "checks_total": 3,
+   "endpoints_2xx": 0,
+   "endpoints_total": 0,
+   "chain_steps_ok": 0,
+   "chain_steps_total": 0
+  }
+ }
+}

@@ -1,0 +1,122 @@
+{
+ "frontend": "http://localhost:15000",
+ "account": "tour938814@example.com",
+ "log": [
+  {
+   "step": 1,
+   "name": "landing",
+   "url": "http://localhost:15000/"
+  },
+  {
+   "register": 200
+  },
+  {
+   "step": 2,
+   "name": "login",
+   "url": "http://localhost:15000/login"
+  },
+  {
+   "step": 3,
+   "name": "after_sign_in",
+   "url": "http://localhost:15000/profiles"
+  },
+  {
+   "profile_clicked": "Tour"
+  },
+  {
+   "step": 4,
+   "name": "home",
+   "url": "http://localhost:15000/browse"
+  },
+  {
+   "step": 5,
+   "name": "home_rows",
+   "url": "http://localhost:15000/browse"
+  },
+  {
+   "nav_links": [
+    [
+     "Home",
+     "/browse"
+    ],
+    [
+     "Shows",
+     "/shows"
+    ],
+    [
+     "Movies",
+     "/movies"
+    ],
+    [
+     "Games",
+     "/games"
+    ],
+    [
+     "New & Popular",
+     "/new"
+    ],
+    [
+     "My List",
+     "/my-list"
+    ]
+   ]
+  },
+  {
+   "step": 6,
+   "name": "nav_home",
+   "url": "http://localhost:15000/browse"
+  },
+  {
+   "step": 7,
+   "name": "nav_shows",
+   "url": "http://localhost:15000/shows"
+  },
+  {
+   "step": 8,
+   "name": "nav_movies",
+   "url": "http://localhost:15000/movies"
+  },
+  {
+   "step": 9,
+   "name": "nav_games",
+   "url": "http://localhost:15000/games"
+  },
+  {
+   "step": 10,
+   "name": "nav_new_popular",
+   "url": "http://localhost:15000/new"
+  },
+  {
+   "step": 11,
+   "name": "nav_my_list",
+   "url": "http://localhost:15000/my-list"
+  },
+  {
+   "cards_on_home": 89
+  },
+  {
+   "step": 12,
+   "name": "card_hover",
+   "url": "http://localhost:15000/browse"
+  },
+  {
+   "step": 13,
+   "name": "title_open",
+   "url": "http://localhost:15000/browse?title=48"
+  },
+  {
+   "play_button_covered": true,
+   "mouse_click_started_player": true
+  },
+  {
+   "step": 14,
+   "name": "player",
+   "url": "http://localhost:15000/browse"
+  },
+  {
+   "video": 0
+  }
+ ],
+ "console_errors": [],
+ "failed_requests": []
+}

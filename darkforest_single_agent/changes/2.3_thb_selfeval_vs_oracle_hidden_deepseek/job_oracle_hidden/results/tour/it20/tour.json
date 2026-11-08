@@ -1,0 +1,45 @@
+{
+ "frontend": "http://127.0.0.1:16000",
+ "account": "tour278083@example.com",
+ "log": [
+  {
+   "step": 1,
+   "name": "landing",
+   "url": "http://127.0.0.1:16000/"
+  },
+  {
+   "register": 200
+  },
+  {
+   "step": 2,
+   "name": "login",
+   "url": "http://127.0.0.1:16000/login"
+  },
+  {
+   "step": 3,
+   "name": "after_sign_in",
+   "url": "http://127.0.0.1:16000/profiles"
+  },
+  {
+   "profile_clicked": "\u2713"
+  },
+  {
+   "step": 4,
+   "name": "home",
+   "url": "http://127.0.0.1:16000/profiles"
+  },
+  {
+   "step": 5,
+   "name": "home_rows",
+   "url": "http://127.0.0.1:16000/profiles"
+  },
+  {
+   "nav_links": []
+  },
+  {
+   "cards_on_home": 0
+  }
+ ],
+ "console_errors": [],
+ "failed_requests": []
+}

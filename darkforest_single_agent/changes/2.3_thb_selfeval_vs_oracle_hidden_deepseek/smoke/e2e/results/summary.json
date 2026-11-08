@@ -1,0 +1,108 @@
+{
+ "selfval": [
+  {
+   "iter": 1,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "validate_calls": 8,
+   "wall_min": 16.5,
+   "hidden": {
+    "api": "48/49",
+    "ui": "16/20",
+    "ui_failed": [
+     "browse home has a hero billboard (>=60% wide)",
+     "the title detail and My List steps ran",
+     "the account menu offers Sign out",
+     "no console errors during the walk"
+    ],
+    "static": [
+     "fabricated_field_fallback",
+     "placeholder_stub_handler"
+    ],
+    "dev_fingerprints": 0,
+    "visual": 0.624,
+    "visual_scored": 16,
+    "errors": [],
+    "rejudged": 0
+   }
+  },
+  {
+   "iter": 2,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "validate_calls": 1,
+   "wall_min": 1.1,
+   "hidden": null
+  }
+ ],
+ "hidden": [
+  {
+   "iter": 1,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "7/8",
+   "endpoints": "11/15",
+   "wall_min": 19.9,
+   "hidden": {
+    "api": "48/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [
+     "fabricated_field_fallback",
+     "placeholder_stub_handler"
+    ],
+    "dev_fingerprints": 0,
+    "visual": 0.596,
+    "visual_scored": 20,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": [
+    "static: fabricated_field_fallback,placeholder_stub_handler"
+   ]
+  },
+  {
+   "iter": 2,
+   "passed": true,
+   "checks": "14/14",
+   "chain": "8/8",
+   "endpoints": "11/15",
+   "wall_min": 0.6,
+   "hidden": {
+    "api": "49/49",
+    "ui": "22/23",
+    "ui_failed": [
+     "clicking a poster opens the title detail with Play"
+    ],
+    "static": [
+     "fabricated_field_fallback",
+     "placeholder_stub_handler"
+    ],
+    "dev_fingerprints": 0,
+    "visual": 0.593,
+    "visual_scored": 20,
+    "errors": [],
+    "rejudged": 0
+   },
+   "notes": [
+    "static: fabricated_field_fallback,placeholder_stub_handler"
+   ]
+  }
+ ],
+ "totals": {
+  "selfval_hours_tokens_out": [
+   0.29,
+   350328
+  ],
+  "hidden_hours_tokens_out": [
+   0.34,
+   438055
+  ]
+ }
+}

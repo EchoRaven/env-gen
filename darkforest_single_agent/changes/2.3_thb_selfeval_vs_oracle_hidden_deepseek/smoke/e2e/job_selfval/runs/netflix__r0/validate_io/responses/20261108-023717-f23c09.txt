@@ -1,0 +1,31 @@
+env-gen api_smoke: FAILED - 2/3 checks passed (11s).
+Contract endpoints answering 2xx with a token: 0/0. Business-chain steps ok: 0/0.
+Summary: FAILED: docker_up
+
+Checks:
+- [pass] frontend_navigable: 33 page component(s), 19 route(s)
+- [pass] frontend_fallback_pages: 0/17 pages are framework fallback ()
+- [fail] docker_up: docker build FAILED (attempt 2/2). Transcript tail:
+Sending build context to Docker daemon  6.657kB
+
+Step 1/9 : FROM python:3.12-slim
+ ---> 6b25cbe65775
+Step 2/9 : ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ ---> Using cache
+ ---> fca335b10e32
+Step 3/9 : WORKDIR /app
+ ---> Using cache
+ ---> d8266e270caa
+Step 4/9 : COPY requirements.txt .
+ ---> Using cache
+ ---> 193410468211
+Step 5/9 : RUN pip install --no-cache-dir -r requirements.txt
+ ---> Using cache
+ ---> 2d9dbe33f924
+Step 6/9 : COPY *.py .
+
+ Image thbval-backend Building 
+ Image thbval-backend Building 
+When using COPY with more than one source file, the destination must be a directory and end with a /
+
+(Validation call 1 of 20 in this iteration.)

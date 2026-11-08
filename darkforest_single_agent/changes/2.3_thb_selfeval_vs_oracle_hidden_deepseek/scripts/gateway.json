@@ -1,0 +1,10 @@
+{
+  "unit": "shabi-forest-ds-2-3",
+  "host": "127.0.0.1",
+  "port": 39823,
+  "upstream": "https://api.inco.ai/v1",
+  "model": "deepseek-v4.1-flash",
+  "upstream_model": "deepseek-v4.1-flash:fast",
+  "max_in_flight": 4,
+  "api_key_file": "/home/user/project/shabi_forest/.envs/secrets/inco_api_key"
+}

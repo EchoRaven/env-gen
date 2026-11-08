@@ -1,0 +1,73 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches: a transparent top nav over a full-bleed hero, a 'Movies' heading with Genres beside it, a hero text block on the left, and a 'Gems for You' carousel peeking at the bottom with another row below it. The gutters are similar (~65px). There are three differences. The implementation adds a 'BROWSE' eyebrow above the Movies heading. The nav bar has a darker solid-ish band where the reference is a soft gradient. The bottom-right rating control is reduced to a faint 'FILM' label.",
+      "fix": "Remove the 'BROWSE' eyebrow. Make the nav background a top-down transparent gradient. Restore the right-edge mute button and rating tab at the hero's lower right."
+    },
+    "components": {
+      "score": 0.65,
+      "missing": [
+        "Genres dropdown as a bordered box with a caret",
+        "Active-nav pill highlight on 'Movies'",
+        "Kids profile link with the kids icon",
+        "Caret next to the profile avatar",
+        "Mute/volume circular button at hero lower right",
+        "Maturity-rating tab with a left bar (e.g. TV-14) at the right edge",
+        "TOP 10 badge + '#N in Movies Today' rank line",
+        "Info icon inside the More Info button",
+        "Carousel page-indicator dashes above the row at the right",
+        "Card badges (TOP 10 corner badge, 'Recently Added' red pill)"
+      ],
+      "notes": "The nav items match (7 links, search, bell, avatar). Several things are invented: the eyebrow, a metadata row (Match %, year, rating, runtime, HD, TOP 10 chip), and a circular + (My List) button. The reference has none of these. Genres is plain text instead of a bordered select. Kids, the mute button, the rating tab and the rank line are all absent.",
+      "fix": "Replace the metadata row with a TOP 10 square badge followed by '#3 in Movies Today'. Remove the + button. Render Genres as a black box with a white 1px border and a caret. Add the Kids entry and the avatar caret, the mute button and rating tab, the info icon in More Info, and the card badges."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both use the same flat, cinematic, dark overlay design language with slightly rounded buttons. The implementation's hero has heavier bottom and left vignettes, and the cards show title overlays in bold text instead of being clean artwork. The active-nav pill (rounded translucent grey) is missing.",
+      "fix": "Add a rounded translucent-grey pill behind the active nav item. Drop the bold text overlays on cards so they show artwork only."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark scheme, Netflix red, white Play button and translucent grey More Info button. The implementation adds a green 'Match' accent that the reference doesn't show. The reference's red appears only in the logo, the TOP 10 badges and the Recently Added pills.",
+      "fix": "Remove the green match text. Use red only for the TOP 10 and Recently Added badges."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a sans UI font. The reference's nav text is larger (~17px) and grey, with the active item in white. The implementation's nav is smaller (~13px). The 'Movies' heading in the reference is a regular-weight ~40px; the implementation is bold. The hero title in the reference is title-art imagery, while the implementation sets plain heavy text. The synopsis in the reference is larger (~22px).",
+      "fix": "Increase nav labels to ~17px, light grey, with the active one white. Set the Movies heading to regular weight at ~40px. Increase the synopsis to ~22px. Render the title as a logo image if one is available."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Search and bell are line icons in both, and Play uses a filled triangle in both. The implementation has a red 'N' badge, which loosely matches the reference's NETFLIX wordmark above the title. Missing: the info-circle icon, the volume-muted icon, the kids icon and the TOP 10 badge. The 16:9 cards match the reference's aspect ratio and rounded corners.",
+      "fix": "Add an outlined info-circle icon to More Info, a muted-speaker icon in a circular outline button, and the square red TOP 10 badge icons."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels, 'Movies', 'Genres', 'Play', 'More Info' and 'Gems for You' all match. The implementation adds 'BROWSE', 'N FILM', 'Match' and 'FILM', none of which the reference has. It lacks the 'Kids' label and the '#N in Movies Today' line.",
+      "fix": "Remove BROWSE, Match and FILM. Add 'Kids' and '#N in Movies Today'."
+    }
+  },
+  "similarity": 0.75,
+  "empty_state": false,
+  "deviations": [
+    "hero meta: reference shows a TOP 10 badge + '#3 in Movies Today'; implementation shows an invented metadata row (87% Match, year, TV-14, runtime, HD, TOP 10 chip)",
+    "hero actions: implementation adds a circular + button that the reference lacks; More Info is missing its info icon",
+    "hero lower right: reference has a mute circle button and a TV-14 rating tab; implementation shows only a faint 'FILM' label",
+    "page header: Genres is plain text in the implementation; reference has a bordered black dropdown with a caret. Implementation also adds a 'BROWSE' red eyebrow",
+    "top nav: no pill highlight on active 'Movies'; Kids entry and the avatar caret are missing; nav text is smaller",
+    "carousel cards: no TOP 10 corner badges or 'Recently Added' pills; implementation adds bold title text overlays; the page-indicator dashes are missing",
+    "hero title: plain bold text where the reference uses title-art lockup imagery"
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a red TOP 10 square badge + '#N in Movies Today'",
+    "Remove the + button and add an info-circle icon to More Info",
+    "Add a mute circle button and a maturity-rating tab with a left border at the hero's right edge",
+    "Style Genres as a bordered black select with a caret; remove the BROWSE eyebrow; make the Movies heading regular weight at ~40px",
+    "Nav: add a pill highlight on the active item, the Kids link with its icon, and the avatar caret; increase labels to ~17px",
+    "Cards: remove the title overlays; add TOP 10 and Recently Added badges; add page-indicator dashes above the row"
+  ],
+  "summary": "The Netflix Movies skeleton is closely matched, but the hero detail elements differ: an invented metadata row and + button, and no rank line, mute button or rating tab. The Genres dropdown, active-nav pill, Kids link and card badges are also missing."
+}
+```

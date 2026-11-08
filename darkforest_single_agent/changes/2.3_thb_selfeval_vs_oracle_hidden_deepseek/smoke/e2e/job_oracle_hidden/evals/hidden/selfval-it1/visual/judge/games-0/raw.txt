@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "The top nav, the hero-then-rows order and the left gutter all match the reference. The reference uses one full-bleed hero image that fills about 70% of the viewport, with a featured game's title lockup at the bottom-left. The implementation's hero is a collage: two posters in the left half and a darkened image on the right. Its lockup sits higher, around the vertical middle. The 'Party Games' row has no tiles. An extra 'From the catalog' movie row was added in its place, followed by 'Family Movie Night'.",
+      "fix": "Render one full-bleed hero image for the featured game, with its title lockup, metadata row and buttons anchored at the bottom-left (~y 520–780). Make 'Party Games' the first row, filled with 16:9 game tiles, and remove the substitute 'From the catalog' row."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present: logo, 7 nav items, search, bell and profile avatar. The hero has two buttons, and there are row headings and 16:9 tiles. Missing: the pill highlight on the active 'Games' tab, the Kids profile link, and the caret next to the avatar. The hero has no title-art logo, no 'Game • Sports • 1-4 Players • 10+ Minutes' metadata row, no Play/More Info buttons with icons, no mute button and no maturity-rating tag. The Party Games row shows no tiles and has no page indicator. Added: a caption explaining the empty state and a 'WHILE YOU WAIT' eyebrow row.",
+      "missing": ["active 'Games' pill highlight", "Kids profile link", "profile dropdown caret", "hero title-art lockup", "hero metadata row (Game • Genre • Players • Duration)", "'Play Game' primary button", "'More Info' button with info icon", "mute toggle button", "maturity rating tag with left bar", "Party Games tile row", "row page indicator"]
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both use a dark, flat, cinematic look with slightly rounded corners and a lot of space. The reference's hero is one image with a bottom fade. The implementation's hero is a split collage with a heavy dark overlay. Its tiles have title text over a gradient, and the reference tiles are plain artwork. The giant 'Games' headline makes the page look like a marketing landing page.",
+      "fix": "Use one full-bleed hero image with only a left and bottom gradient. Remove the oversized 'Games' headline. Show the tile artwork without a title overlay."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a #141414-style dark base, the red Netflix wordmark, a white primary button and a translucent grey secondary button. The implementation's hero is dimmed far more, so it reads muddy instead of vivid. Its secondary button is opaque grey, while the reference's is translucent.",
+      "fix": "Lighten the hero overlay so the artwork stays vivid, and limit the darkening to the bottom and left fades. Make 'More Info' a translucent grey (rgba(109,109,110,0.7))."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif font with similar section heading sizes. The implementation's nav text is smaller (~13px vs ~17px), and its active tab is bold with no pill. It adds a huge display headline and a letter-spaced all-caps 'NETFLIX GAMES' eyebrow, neither of which is in the reference. There is no medium-weight metadata row with bullet separators.",
+      "fix": "Increase the nav labels to ~17px. Replace the 'Games' display headline with a title-art image plus a ~17px white metadata row separated by '•'."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "The search and bell outline icons match, and the tiles use 16:9 cover images with slight rounding. Missing: the info-circle icon on More Info, the muted-speaker icon in a circular outlined button, and the Kids avatar icon. The implementation's profile avatar is a photo, where the reference uses a blue smiley square.",
+      "fix": "Add an outlined info-circle icon to 'More Info', a circular mute button with a speaker-x icon at the bottom-right of the hero, and the Kids avatar next to the profile."
+    },
+    "copy": {
+      "score": 0.45,
+      "notes": "The nav labels and the 'Party Games' heading match. The hero buttons read 'Explore TV Shows' and 'Explore Movies' instead of 'Play Game' and 'More Info'. The implementation adds empty-state copy plus 'WHILE YOU WAIT' and 'From the catalog', and it has no 'Kids' label.",
+      "fix": "Rename the buttons to 'Play Game' and 'More Info', add the 'Kids' nav label, and remove the explanatory empty-state text."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": true,
+  "deviations": [
+    "Party Games row: the reference shows a row of 16:9 game artwork tiles; the implementation shows only the text 'No game titles are available in the provided dataset.'",
+    "Hero: the reference has a single full-bleed image with a featured game's title-art lockup at the bottom-left; the implementation has a split two-poster collage, a dark right half and a huge 'Games' text headline",
+    "Hero buttons: the reference has a white 'Play Game' button and a translucent 'More Info' button with an info icon; the implementation has 'Explore TV Shows' and 'Explore Movies' with no icons",
+    "Hero: the reference has a metadata row (Game • Sports • 1-4 Players • 10+ Minutes); the implementation shows a paragraph of empty-state text instead",
+    "Hero bottom-right: the reference has a circular mute button and an 'ALL' rating tag with a left bar; the implementation has neither",
+    "Nav: the reference highlights 'Games' with a rounded grey pill; the implementation only bolds the label",
+    "Nav right: the reference has a 'Kids' profile link and a dropdown caret after the avatar; the implementation has neither, and it adds a 'Vis One' name label",
+    "Rows: the implementation adds an extra 'WHILE YOU WAIT / From the catalog' movie row whose tiles have title text overlaid; the reference has neither",
+    "Nav type: the implementation's labels are noticeably smaller than the reference's"
+  ],
+  "fixes": [
+    "Seed game data and render the 'Party Games' row as 16:9 artwork tiles with no title text overlaid, plus a page indicator at the top-right",
+    "Rebuild the hero as one full-bleed featured-game image with left and bottom gradients. At the bottom-left, stack the title-art logo, a 'Game • Genre • Players • Duration' row, a white 'Play Game' button and a translucent 'More Info' button with an info icon",
+    "Add a circular mute button and an 'ALL' maturity tag with a left border at the bottom-right of the hero",
+    "Remove the 'Games' display headline, the 'NETFLIX GAMES' eyebrow, the empty-state copy and the 'From the catalog' row",
+    "Nav: show the active 'Games' tab as a grey rounded pill, increase labels to ~17px, and add the Kids link and the dropdown caret by the avatar"
+  ],
+  "summary": "The Netflix nav and dark base match, but the screen is an empty state. The hero is a collage with empty-state copy, the Party Games row has no tiles, and an extra movie row fills the gap, so the reference's featured-game hero and game tile row never render."
+}

@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.62,
+      "notes": "The overall structure matches: a centred dark modal about 1080px wide over a dimmed browse page, an 'Episodes' heading with a right-aligned season control, and a vertical list of episode rows (number, thumbnail, title/description, duration) separated by dividers. Differences: in the reference the modal sits above the site header, so the header is cut off behind it. In the implementation the header sits on top of the modal, which starts underneath it. The 'scrolled' state is also much less scrolled: the hero image, buttons and metadata block are still in view, and an 'About' section takes up the bottom of the shot, where the reference fills the viewport with the episode list. Episode rows are about 113px tall against about 145px in the reference, so the list looks compressed.",
+      "fix": "Give the modal overlay a higher z-index than the site header so the modal covers it. Scroll the modal so the description sits at the very top and the episode list fills the rest of the viewport. Make each episode row about 145px tall with about 24px vertical padding."
+    },
+    "components": {
+      "score": 0.68,
+      "missing": [
+        "Plain-text season/series label at right of Episodes heading (reference shows a text label, not a dropdown)",
+        "Rounded, lighter-grey highlighted card for the active first episode (implementation highlight is flat and square)"
+      ],
+      "notes": "Present: the Episodes heading, episode rows with index, thumbnail, bold title, duration, two-line description and dividers, and a play overlay on the thumbnail. Different: the implementation uses a bordered 'Season 1' dropdown where the reference shows a plain title label. The active-row highlight is subtler and has square corners, where the reference uses a clearly lighter card with rounded corners. The visible hero, action buttons, metadata and About section come from the less-scrolled state; they are not shown in the reference viewport.",
+      "fix": "When there is only one season, replace the Season dropdown with a plain right-aligned text label (about 20px, white). Style the first or active row as a #333 card with about 4px radius."
+    },
+    "style": {
+      "score": 0.72,
+      "notes": "Both use the same flat dark Netflix modal language: hairline dividers between rows and generous horizontal padding. The reference is airier, with larger rows and a rounded highlight card. The implementation is denser and uses square corners on the highlight.",
+      "fix": "Increase row padding and the gap between thumbnail and text. Give the active-row card a 4px radius and a lighter fill."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a #181818-style modal on a dimmed backdrop, white titles and light-grey descriptions. The reference's active row is a noticeably lighter grey (#2f2f2f); the implementation's is barely distinguishable. The implementation header has no dark band, so the hero art shows through it.",
+      "fix": "Set the active-row background to about #2f2f2f. Make the header backdrop solid dark in this state."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Both use the same sans family, a bold 'Episodes' heading and bold episode titles. Sizes are too small: reference episode numbers are about 26px light and unpadded ('1'), while the implementation uses about 14px zero-padded numbers ('01'). Reference titles are about 17px and descriptions about 15px with roomy line height; the implementation uses about 14px and 13px. Reference durations are about 17px; the implementation's are about 12px.",
+      "fix": "Render episode numbers unpadded at about 26px regular weight. Set titles to 17px bold, descriptions to 15px with 1.5 line height in #d2d2d2, and durations to 17px."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The 16:9 episode thumbnails with a circular-outline play overlay match the reference treatment. Reference thumbnails are larger (about 170×96) with slightly rounded corners; the implementation's are about 142×80.",
+      "fix": "Make episode thumbnails about 170×96 with a 4px radius, and keep the circular play overlay shown on hover."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The 'Episodes' heading and the 'NNm' duration format match. The right-hand control reads 'Season 1' where the reference shows the series name. Episode indexes use the '01' format instead of '1'.",
+      "fix": "Show the series name as the right-side label for single-season titles. Drop zero-padding from episode numbers."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "Modal stacking: in the reference the modal covers the site header; in the implementation the header sits on top of the modal, which begins underneath it",
+    "Scroll state: the reference viewport is filled by the episode list right below the description; the implementation still shows the hero, buttons and metadata, and has an About section at the bottom",
+    "Episode rows: the implementation's rows, thumbnails and text are about 20–30% smaller than the reference's, so the list looks cramped",
+    "Episode index: the reference uses large (about 26px) unpadded numbers; the implementation uses small zero-padded '01'",
+    "Episodes header right side: the reference has a plain text label; the implementation has a bordered 'Season 1' dropdown box",
+    "Active row highlight: the reference has a lighter grey card with rounded corners; the implementation's highlight is faint and square"
+  ],
+  "fixes": [
+    "Raise the modal overlay's z-index above the site header",
+    "Scroll the modal further so the description sits at the top and episodes fill the viewport",
+    "Enlarge episode rows: 170×96 thumbnails with 4px radius, row height about 145px, 26px unpadded index, 17px bold title, 15px description, 17px duration",
+    "Replace the Season dropdown with a plain right-aligned text label for single-season titles",
+    "Style the active episode row as a #2f2f2f card with rounded corners"
+  ],
+  "summary": "The implementation has the same Netflix More Info modal and episode-list structure, but the header sits on top of the modal, the scroll position is wrong, the episode rows are undersized, and it uses a Season dropdown where the reference shows a plain text label."
+}

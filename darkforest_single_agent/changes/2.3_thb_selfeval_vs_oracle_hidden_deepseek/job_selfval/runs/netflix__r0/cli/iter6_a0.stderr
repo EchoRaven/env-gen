@@ -1,0 +1,5 @@
+2026-11-08T08:57:01.570576Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /workspace/app/frontend/src/components/Header.jsx:
+              {activeProfile && <div className="account-current"><img src={activeProfile.avatar} alt="" /><span>{activeProfile.name}</span></div>}
+              <button type="button" onClick={() => navigate('/profiles')}>Manage Profiles</button>
+              <button type="button" onClick={() => navigate('/account')}>Account</button>
+              <button type="button" onClick={() => navigate('/signout')}>Sign out of Netflix</button>

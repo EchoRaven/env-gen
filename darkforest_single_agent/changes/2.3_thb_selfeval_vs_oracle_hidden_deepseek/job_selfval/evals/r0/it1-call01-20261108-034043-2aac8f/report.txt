@@ -1,0 +1,32 @@
+env-gen api_smoke: FAILED - 2/3 checks passed (36s).
+Contract endpoints answering 2xx with a token: 0/0. Business-chain steps ok: 0/0.
+Summary: FAILED: docker_up
+
+Checks:
+- [pass] frontend_navigable: 30 page component(s), 18 route(s)
+- [pass] frontend_fallback_pages: 0/17 pages are framework fallback ()
+- [fail] docker_up: Network thbval_default Creating 
+ Volume thbval_pgdata Creating 
+ Volume thbval_pgdata Creating 
+ Network thbval_default Creating 
+ Volume thbval_pgdata Created 
+ Volume thbval_pgdata Created 
+ Network thbval_default Created 
+ Network thbval_default Created 
+ Container thbval-database-1 Creating 
+ Container thbval-database-1 Created 
+ Container thbval-backend-1 Creating 
+ Container thbval-backend-1 Created 
+ Container thbval-frontend-1 Creating 
+ Container thbval-frontend-1 Created 
+ Container thbval-database-1 Starting 
+ Container thbval-database-1 Started 
+ Container thbval-database-1 Waiting 
+ Container thbval-database-1 Healthy 
+ Container thbval-backend-1 Starting 
+Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint thbval-backend-1 (be9bc03380aa4d8c3fde031229f6deb0064005f76eb0c6ea04da2e8714830207): failed to bind host port 0.0.0.0:8000/tcp: address already in use
+--- container logs (tail) ---
+8:41:17.125 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+database-1  | 2026-11-08 08:41:17.125 UTC [49] LOG:  shutting down
+database-1  | 2026-11-08 08:41:17.132 UTC [49] LOG:  checkpoint starting: shutdown immediate
+database-1  | 2026-11-08 08:41:17.408 UTC [49] LOG:  checkpoint complete: wrote 1018 buffers (6.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.020 s, sync=0.223 s, total=0.283 s; sync files=350, longest=0.011 s, average=0.001 s; dista ...[truncated]

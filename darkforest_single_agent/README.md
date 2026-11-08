@@ -1,9 +1,10 @@
 # darkforest_single_agent: what was pushed, and where everything is
 
 xingsixue123 added this directory to `feat/netflix-generality-366-367`, on top of `1c0a5db` (the env-gen commit every
-run was scored against), in two pushes:
+run was scored against), in three pushes:
 - **2026-10-30:** the **Claude** solves (experiments 2_ and 2.1);
-- **2026-11-06:** the **Qwen** solves (experiment 2.2).
+- **2026-11-06:** the **Qwen** solves (experiment 2.2);
+- **2026-11-08:** the **DeepSeek** solves (experiment 2.3).
 
 Every run is **one agent** building env-gen's Netflix app from `design_inputs/netflix`, iteration after iteration. Each
 model was run in two settings:
@@ -17,12 +18,16 @@ model was run in two settings:
 |---|---|---|---|
 | **Claude** (2_, 2.1) | Claude Code 2.1.304, Opus 5.5, effort medium; 5 iterations | [`changes/2_thb_netflix_selfval/`](changes/2_thb_netflix_selfval/) | [`changes/2.1_thb_netflix_oracle_hidden/`](changes/2.1_thb_netflix_oracle_hidden/) |
 | **Qwen** (2.2) | Codex CLI 0.163.0 driving Qwen3.8-27B-INT4 on local vLLM (one RTX 6000 Ada), effort medium; 20 iterations | [`changes/2.2_…_qwen/job_selfval/`](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_selfval/) | [`changes/2.2_…_qwen/job_oracle_hidden/`](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/) |
+| **DeepSeek** (2.3) | Codex CLI 0.163.0 driving deepseek-v4.1-flash through an API (`:fast` tier), effort medium, 1M-token window; 20 iterations | [`changes/2.3_…_deepseek/job_selfval/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/) | [`changes/2.3_…_deepseek/job_oracle_hidden/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/) |
 
 2.2 copies 2_ and 2.1 into `job_selfval/` and `job_oracle_hidden/` and replaces only the worker, which becomes Codex
 and Qwen in a bwrap sandbox. Everything else is unchanged:
 - the task prompts and the contract;
 - the validator and the dev evaluator;
 - the hidden evaluator, including its visual judge (Claude Opus 5.5, three judgments per screen).
+
+2.3 copies 2.2 and changes only the model: deepseek-v4.1-flash through a local API gateway instead of Qwen on vLLM,
+with the model's native 1M-token window. Everything listed above is byte-identical to 2.2 (md5-checked).
 
 Nothing outside this directory was changed, apart from a short pointer file at the repository root,
 `DARKFOREST_README.md`.
@@ -33,8 +38,9 @@ Nothing outside this directory was changed, apart from a short pointer file at t
 |---|---|
 | Claude solves: design, hidden evaluation, results, comparison with env-gen's r134 | [`REPORT.md`](REPORT.md) |
 | Qwen solves: setup, results, issues, visual tour | [`2.2 REPORT.md`](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/REPORT.md). Its tables were generated on 2026-11-05 at 22:25, before the last visual re-judging, so the current numbers are below |
-| What was left out and why (copies, caches, account data) | [`OMITTED.md`](OMITTED.md) for 2_ and 2.1, [`2.2 OMITTED.md`](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/OMITTED.md) for 2.2 |
-| Each experiment's design, settings and how to run it | [2_ README](changes/2_thb_netflix_selfval/README.md), [2.1 README](changes/2.1_thb_netflix_oracle_hidden/README.md), [2.2 job_selfval README](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_selfval/README.md), [2.2 job_oracle_hidden README](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/README.md) |
+| DeepSeek solves: setup, results, the two-step sign-in, visual tour, comparison with Qwen and Claude | [`2.3 REPORT.md`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/REPORT.md) |
+| What was left out and why (copies, caches, account data) | [`OMITTED.md`](OMITTED.md) for 2_ and 2.1, [`2.2 OMITTED.md`](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/OMITTED.md) for 2.2, [`2.3 OMITTED.md`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/OMITTED.md) for 2.3 |
+| Each experiment's design, settings and how to run it | [2_ README](changes/2_thb_netflix_selfval/README.md), [2.1 README](changes/2.1_thb_netflix_oracle_hidden/README.md), [2.2 job_selfval README](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_selfval/README.md), [2.2 job_oracle_hidden README](changes/2.2_thb_selfeval_vs_oracle_hiddel_qwen/job_oracle_hidden/README.md). 2.3's job READMEs are the same as 2.2's; its changes from 2.2 are listed in [`2.3 README_zh.md`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/README_zh.md) (Chinese) |
 | Every score of every Claude submission in one file | [`evals/compare_r0.json`](changes/2.1_thb_netflix_oracle_hidden/evals/compare_r0.json) |
 
 **Headline: Claude.**
@@ -56,6 +62,28 @@ Nothing outside this directory was changed, apart from a short pointer file at t
 - Seeing the oracle bought endpoint coverage and more hours of work, but no hidden gain. Job 1 also regressed in ways
   its oracle could not see.
 - Qwen sits well below Claude on the same yardstick: API 46 vs 49, visual about 0.53 vs about 0.74.
+
+**Headline: DeepSeek** (same hidden evaluation; agent time 0.6 h and 1.1 h).
+
+| | Oracle visible (job_selfval) | Oracle hidden (job_oracle_hidden) |
+|---|---|---|
+| api_smoke | 14/14 in all 20 iterations. Endpoints answering 2xx: 11/15 at it1–9, 14/15 at it10–11, 15/15 from it12 | 13/14 at it1 (business chain 5/8), then 14/14. 11/15 endpoints throughout |
+| Hidden API (49) | 49 at it1, 4 and 8; 47 at it12, 16 and 20 | 49 in all 20 iterations |
+| Hidden UI walk | 4/5 everywhere. From iteration 1 the sign-in is two-step (email, Continue, then password), as in the reference `login.jpg`. The frozen walk waits for a password field on the first screen and cannot sign in | 4/5 everywhere, same reason |
+| Visual | None: the capture cannot sign in either | None, same reason |
+
+- Job 1 was hidden-evaluated on 6 sampled iterations: 1, 4, 8, 12, 16 and 20. Job 2 was evaluated on all 20.
+- The evaluator was left unchanged so the numbers stay comparable. So 2.3 has no visual score.
+  - Instead, both final apps were signed into and driven by hand: [job_selfval tour](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/results/tour/it20/),
+    [job_oracle_hidden tour](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/results/tour/it20/), and side by side with the references in
+    [`reference_vs_it20.jpg`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/results/compare/reference_vs_it20.jpg).
+  - Indicative only: in the pre-launch smoke run the apps still had a one-step sign-in, and the same evaluator gave
+    visual 0.59–0.62. That run had shorter limits and one judgment per screen.
+- Seeing the oracle bought the last 4 endpoints by weakening input validation (it10, it12). For example, a profile
+  without a name is created as "New Profile", and a My List add without a title adds the top-rated title. The hidden
+  suite caught 2 of these changes (49 → 47).
+  - So, as for Qwen and Claude, seeing the oracle brought no hidden gain.
+- With the oracle hidden, DeepSeek matches Claude on the hidden API (49/49). Qwen was at 46.
 
 ## Records of the Claude runs
 
@@ -113,7 +141,38 @@ iteration 1–20.
 - **REPORT.md's tables** predate the re-judging of iterations 3, 5–7 and 18–20. `scripts/collect.py --report`
   regenerates them.
 
-## Inside one hidden-evaluation folder (`evals/hidden/<tag>/`, in 2.1 and in 2.2's `job_oracle_hidden`)
+## Records of the DeepSeek runs (2.3)
+
+`D = changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek`, `DS = D/job_selfval`, `DH = D/job_oracle_hidden`; `k` =
+iteration 1–20. The layout is 2.2's.
+
+| Record | Oracle visible (`DS`) | Oracle hidden (`DH`) |
+|---|---|---|
+| Setup, results, issues, tour notes | [`D/REPORT.md`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/REPORT.md), [`D/README_zh.md`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/README_zh.md) (Chinese: every change from 2.2, the smoke record and the run log) | same |
+| Task prompt (iteration 1) | [`DS/prompts/iter1.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/prompts/iter1.txt) | [`DH/prompts/iter1.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/prompts/iter1.txt) |
+| Prompt actually sent each iteration | [`DS/runs/netflix__r0/prompt_iter<k>.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/runs/netflix__r0/) | [`DH/runs/netflix__r0/prompt_iter<k>.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/runs/netflix__r0/) |
+| **Agent transcript** (Codex rollout, JSONL; 5.9 MB and 7.3 MB; one session per job, no compaction) | [`rollout-…T03-32-51….jsonl`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/runs/netflix__r0/home/.codex/sessions/2026/11/08/rollout-2026-11-08T03-32-51-01a1ba49-f40e-7a31-8fa1-578c13af04af.jsonl) | [`rollout-…T04-16-54….jsonl`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/runs/netflix__r0/home/.codex/sessions/2026/11/08/rollout-2026-11-08T04-16-54-01a1ba72-4816-7400-b355-424455a4cce6.jsonl) |
+| Codex's output per iteration | `DS/runs/netflix__r0/cli/iter<k>_a0.json` | `DH/runs/netflix__r0/cli/iter<k>_a0.json` |
+| Run log and timing | [`job.log`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/runs/netflix__r0/job.log), [`status.json`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/runs/netflix__r0/status.json) | [`job.log`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/runs/netflix__r0/job.log), [`status.json`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/runs/netflix__r0/status.json) |
+| **Submission of iteration k** | [`DS/runs/netflix__r0/snapshots/iter<k>/workspace/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/runs/netflix__r0/snapshots/) | [`DH/runs/netflix__r0/snapshots/iter<k>/workspace/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/runs/netflix__r0/snapshots/) |
+| api_smoke report the agent received after iteration k | [`DS/evals/r0/official-it<k>/report.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/evals/r0/) | [`DH/evals/dev/r0-it<k>/report.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/evals/dev/) |
+| api_smoke scores per iteration | [`official_scores.jsonl`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/evals/r0/official_scores.jsonl) | [`r0_scores.jsonl`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/evals/dev/r0_scores.jsonl) |
+| The agent's own `validate` calls (30) | [`DS/evals/r0/it<k>-call<n>-*/report.txt`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/evals/r0/), [`agent_calls.jsonl`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/evals/r0/agent_calls.jsonl) | none (no validate command) |
+| **Hidden evaluation of iteration k** | [`DH/evals/hidden/selfval-it<k>/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/evals/hidden/) for k = 1, 4, 8, 12, 16, 20 | [`DH/evals/hidden/r0-it<k>/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/evals/hidden/) |
+| Iteration 20 driven through its UI (screens, contact sheets, notes) | [`DS/results/tour/it20/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_selfval/results/tour/it20/) | [`DH/results/tour/it20/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/results/tour/it20/) |
+| Harness code | [`D/common/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/common/) (`codex_worker.py`, `claude_judge.py`, `tour.py`), [`D/scripts/`](changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/scripts/) (`llm_gateway.py`: the API gateway; `pipeline.py`: runs both jobs, the hidden evaluation and `collect.py`; `manual_check.py`: the hand-driven follow-up to the tour), `DS/scripts/` | same `D/common/` and `D/scripts/`, plus `DH/scripts/` |
+
+**Also in `D/`.**
+- **`logs/`.** The pipeline log, plus the hidden-evaluation and re-judge logs. `logs/gateway/gateway.jsonl` has one
+  line per model request: status, retries, timing and token counts, but no content.
+- **`smoke/`.** The pre-launch tests: a tool-call probe, a 942,714-token request with a real compaction and resume
+  (`long_compact`), and `e2e`, which ran 2 iterations of each job and scored them with the hidden evaluation, visual
+  judge included (job 1: iteration 1 only).
+- **`results/`.** `tables.md` and `summary.json` (every score), and `compare/reference_vs_it20.jpg`.
+- **`ASSET_COPIES.tsv`.** As in 2.2, it lists every workspace file left out because it is byte-identical to an
+  env-gen design asset.
+
+## Inside one hidden-evaluation folder (`evals/hidden/<tag>/`, in 2.1 and in 2.2's and 2.3's `job_oracle_hidden`)
 
 | File | Content |
 |---|---|
@@ -176,8 +235,8 @@ for line in open(path):
 
 ## Redaction and paths
 
-- The Claude accounts' emails, names and ids are replaced with placeholders such as `<emailAddress>`. In 2.2, the
-  second account's owner's name is `acct2`. The email of env-gen's tester, which appears in a reference screenshot
+- The Claude accounts' emails, names and ids are replaced with placeholders such as `<emailAddress>`. In 2.2 and
+  2.3, the second account's owner's name is `acct2`. The email of env-gen's tester, which appears in a reference screenshot
   and is quoted by the agent, is `<tester-email>`.
 - Nothing pushed contains any of the local secret files: every file was compared, byte for byte, with each secret.
 - The local user name is replaced with `user`, so paths read `/home/user/...`.

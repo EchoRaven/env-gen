@@ -1,0 +1,77 @@
+{
+ "passed": false,
+ "summary": "FAILED: docker_up",
+ "checks": [
+  {
+   "name": "frontend_navigable",
+   "status": "pass",
+   "detail": "33 page component(s), 19 route(s)",
+   "sec": 0.0
+  },
+  {
+   "name": "frontend_fallback_pages",
+   "status": "pass",
+   "detail": "0/17 pages are framework fallback ()",
+   "sec": 0.0
+  },
+  {
+   "name": "docker_up",
+   "status": "fail",
+   "detail": "Network thbval_default Creating \n Network thbval_default Creating \n Volume thbval_netflix_pgdata Creating \n Volume thbval_netflix_pgdata Creating \n Volume thbval_netflix_pgdata Created \n Volume thbval_netflix_pgdata Created \n Network thbval_default Created \n Network thbval_default Created \n Container thbval-database-1 Creating \n Container thbval-database-1 Created \n Container thbval-backend-1 Creating \n Container thbval-backend-1 Created \n Container thbval-frontend-1 Creating \n Container thbval-frontend-1 Created \n Container thbval-database-1 Starting \n Container thbval-database-1 Started \n Container thbval-database-1 Waiting \n Container thbval-database-1 Healthy \n Container thbval-backend-1 Starting \nError response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint thbval-backend-1 (a3376b7256074ee7067c739a67ae6e78e27b411676497012b75ab48f5c0c8d87): failed to bind host port 0.0.0.0:8000/tcp: address already in use\n--- container logs (tail) ---\n7:48:02.357 UTC [48] LOG:  background worker \"logical replication launcher\" (PID 54) exited with exit code 1\ndatabase-1  | 2026-11-08 07:48:02.357 UTC [49] LOG:  shutting down\ndatabase-1  | 2026-11-08 07:48:02.365 UTC [49] LOG:  checkpoint starting: shutdown immediate\ndatabase-1  | 2026-11-08 07:48:02.621 UTC [49] LOG:  checkpoint complete: wrote 1012 buffers (6.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.022 s, sync=0.200 s, total=0.265 s; sync files=350, longest=0.008 s, average=0.001 s; distance=4646 kB, estimate=4646 kB; lsn=0/197C290, redo lsn=0/197C290\ndatabase-1  | 2026-11-08 07:48:02.626 UTC [48] LOG:  database system is shut down\ndatabase-1  |  done\ndatabase-1  | server stopped\ndatabase-1  | \ndatabase-1  | PostgreSQL init process complete; ready for start up.\ndatabase-1  | \ndatabase-1  | 2026-11-08 07:48:02.675 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit\ndatabase-1  | 2026-11-08 07:48:02.675 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432\ndatabase-1  | 2026-11-08 07:48:02.675 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432\ndatabase-1  | 2026-11-08 07:48:02.690 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"\ndatabase-1  | 2026-11-08 07:48:02.705 UTC [68] LOG:  database system was shut down at 2026-11-08 07:48:02 UTC\ndatabase-1  | 2026-11-08 07:48:02.715 UTC [1] LOG:  database system is ready to accept connections\n",
+   "sec": 14.48,
+   "steps": [
+    {
+     "name": "lease_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "lock_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "stage_assets",
+     "sec": 0.01
+    },
+    {
+     "name": "repair_params",
+     "sec": 0.0
+    },
+    {
+     "name": "localize_seed",
+     "sec": 0.0
+    },
+    {
+     "name": "down_v",
+     "sec": 0.04
+    },
+    {
+     "name": "build",
+     "sec": 7.87
+    },
+    {
+     "name": "prune_orphans_1203gw",
+     "sec": 0.0
+    },
+    {
+     "name": "up",
+     "sec": 6.36
+    }
+   ]
+  }
+ ],
+ "backend_port": null,
+ "endpoints": [],
+ "chains": [],
+ "_wrapper": {
+  "framework_modified_files": [],
+  "wall_s": 15.9,
+  "metrics": {
+   "checks_passed": 2,
+   "checks_total": 3,
+   "endpoints_2xx": 0,
+   "endpoints_total": 0,
+   "chain_steps_ok": 0,
+   "chain_steps_total": 0
+  }
+ }
+}

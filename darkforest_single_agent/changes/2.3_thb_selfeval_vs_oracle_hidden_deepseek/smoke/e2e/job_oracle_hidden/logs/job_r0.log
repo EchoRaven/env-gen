@@ -1,0 +1,9 @@
+[2026-11-08T02:51:54] iter1 attempt 0 (new session)
+[2026-11-08T03:11:49] iter 1 submitted: items=610 cmds=204 wall=1195.0s usage={'input_tokens': 38631982, 'cached_input_tokens': 38441984, 'cache_write_input_tokens': 0, 'output_tokens': 215892, 'reasoning_output_tokens': 81957}
+[2026-11-08T03:12:26] dev evaluation of iter 1: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 7, 'chain_steps_total': 8}
+[2026-11-08T03:12:26] hidden evaluation of iter 1 started (results stay outside the sandbox)
+[2026-11-08T03:12:26] iter2 attempt 0 (resume 01a1ba24-776c-77a2-9855-047a91718494)
+[2026-11-08T03:13:00] iter 2 submitted: items=29 cmds=9 wall=33.4s usage={'input_tokens': 41552562, 'cached_input_tokens': 41355776, 'cache_write_input_tokens': 0, 'output_tokens': 222163, 'reasoning_output_tokens': 84014}
+[2026-11-08T03:16:05] dev evaluation of iter 2: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-11-08T03:16:05] hidden evaluation of iter 2 started (results stay outside the sandbox)
+[2026-11-08T03:21:34] job done

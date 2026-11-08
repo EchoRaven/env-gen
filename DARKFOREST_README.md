@@ -6,6 +6,8 @@ single-agent solves of env-gen's Netflix task, each run once with the oracle vis
 - **Claude** (2026-10-30). One Claude Code agent (Opus 5.5), 5 iterations per setting.
 - **Qwen** (2026-11-06). Codex CLI driving a local Qwen3.8-27B, 20 iterations per setting. It uses the same task,
   validator and hidden evaluation as the Claude runs.
+- **DeepSeek** (2026-11-08). Codex CLI driving deepseek-v4.1-flash through an API, 20 iterations per setting. Only
+  the model changed from the Qwen runs.
 
 For each run the directory has:
 - the code and prompts;

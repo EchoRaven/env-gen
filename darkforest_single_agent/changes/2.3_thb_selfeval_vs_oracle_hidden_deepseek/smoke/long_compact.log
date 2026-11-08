@@ -1,0 +1,10 @@
+tokens/record 27.02; 8513 records (~229978 tokens, 978995 chars) per filler turn
+fill1: rc=0 wall=7s error=False result='OK part 1' usage={'input_tokens': 234936, 'cached_input_tokens': 4864, 'cache_write_input_tokens': 0, 'output_tokens': 65, 'reasoning_output_tokens': 60}
+fill2: rc=0 wall=8s error=False result='OK part 2' usage={'input_tokens': 699819, 'cached_input_tokens': 239616, 'cache_write_input_tokens': 0, 'output_tokens': 83, 'reasoning_output_tokens': 73}
+fill3: rc=0 wall=9s error=False result='OK part 3' usage={'input_tokens': 1394603, 'cached_input_tokens': 704512, 'cache_write_input_tokens': 0, 'output_tokens': 101, 'reasoning_output_tokens': 86}
+fill4: rc=0 wall=10s error=False result='OK part 4' usage={'input_tokens': 2319287, 'cached_input_tokens': 1399296, 'cache_write_input_tokens': 0, 'output_tokens': 115, 'reasoning_output_tokens': 95}
+t2 attempt 0 (resume 01a1ba13-0377-7853-b127-a9b8de079039)
+turn cat: error=False result='KEY: VIOLET-2208-CEDAR' usage={'input_tokens': 6191418, 'cached_input_tokens': 4184832, 'cache_write_input_tokens': 0, 'output_tokens': 6344, 'reasoning_output_tokens': 2970}
+t3 attempt 0 (resume 01a1ba13-0377-7853-b127-a9b8de079039)
+turn question: error=False result='KEY: `VIOLET-2208-CEDAR`  \nSECRET CODE: `AMBER-7319-MAPLE`'
+session 01a1ba13-0377-7853-b127-a9b8de079039: compacted items 1; max request input 942714; last request input 140065; abandoned None

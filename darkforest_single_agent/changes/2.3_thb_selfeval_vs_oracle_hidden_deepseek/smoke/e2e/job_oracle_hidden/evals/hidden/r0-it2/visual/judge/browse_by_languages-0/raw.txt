@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "Both have the same top nav, a left-aligned 'Browse by Languages' title with preferences on the right, and a full-width title grid. The differences: the reference puts the label 'Select Your Preferences' and two dropdowns side by side on the same line as the title. The implementation stacks a heading over a 3-row table of Original Language, Dubbing and Subtitles. The reference grid has 6 columns of landscape 16:9 tiles with large vertical gaps between rows. The implementation has 9 columns of portrait posters with tight gaps. The implementation also adds a hero backdrop band behind the header and a meta row ('60 titles' / 'All original languages') that the reference doesn't have.",
+      "fix": "Remove the hero backdrop band and the meta row. Put 'Select Your Preferences' and two dropdowns (about 240px and 265px wide) in one row, right-aligned and vertically centered with the page title. Change the grid to 6 columns of 16:9 landscape tiles with about 8px horizontal gaps and about 80px gaps between rows."
+    },
+    "components": {
+      "score": 0.5,
+      "missing": [
+        "Pill highlight on the active 'Browse by Languages' nav item",
+        "Kids profile link (icon + 'Kids' label) in the header",
+        "Mode dropdown (Original Language / Dubbing / Subtitles) as a single bordered select",
+        "Language list dropdown (Arabic…Vietnamese) as a custom dark menu",
+        "Overlay badges on tiles: 'TOP 10', 'Recently Added', 'New Season', 'Live Now'",
+        "Hover preview card: video still, title logo, mute button, play / add / like / expand circle buttons, maturity rating, duration, HD badge, genre tags"
+      ],
+      "notes": "The nav items, search, bell and avatar with caret are all present. The preferences control is a different component: a table with 'Not available' rows plus a native select, where the reference uses two custom dropdown selects. The tiles have no badges, and nothing like the expanded hover preview card exists. The implementation adds a hero image, a title count and a filter label that the reference doesn't show.",
+      "fix": "Replace the preferences table with two custom dark dropdowns: a mode select and a language select, each with a white border and a caret, opening a dark list menu. Add a pill highlight to the active nav item, add a Kids link before the avatar, add corner and bottom badges to tiles, and build an expanded hover card with the action button row and metadata row."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both use a flat, dark Netflix look with square-cornered tiles. The reference preferences use thin white-bordered selects. The implementation uses a table with hairline dividers and a native browser select. The reference's active nav item is a rounded gray pill, which the implementation lacks. The implementation's hero backdrop adds decoration that the reference doesn't have.",
+      "fix": "Use 1px white-bordered select boxes with square corners and dark fills, style the active nav item as a pill with a #333 background, drop the hero image, and give the hover card an elevated #181818 surface with rounded corners."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a near-black (#141414) base, a red wordmark and white/gray text. The reference uses red badges (#E50914) on tiles, while the implementation has no accent color on tiles. The hero image adds warm tones that aren't in the reference. The native select renders slightly differently.",
+      "fix": "Add red badge fills to the tiles, keep the page background a solid #141414 with no hero, and make the dropdown menus #000 or #141414 with white text."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "The sans-serif title is a similar size and weight. Nav text matches, though the active item is bold in the implementation and sits in a pill in the reference. Text inside the reference dropdowns is larger (about 18px) than the implementation's tiny native select text. The implementation adds small gray meta captions.",
+      "fix": "Set the dropdown values at about 18px regular white and the menu items at about 16px. Make the 'Select Your Preferences' label about 15px, inline with the dropdowns. Remove the meta captions."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "The search, bell and avatar icons match in outline style. The reference avatar is a blue smiley; the implementation uses a generic silhouette. The Kids icon is missing. The reference tiles are landscape 16:9 artwork with title treatments and badges. The implementation uses portrait 2:3 posters, which is a major crop/aspect deviation. The circular outline action icons on the hover card are absent.",
+      "fix": "Switch tile artwork to 16:9 landscape backdrops with title logos, use a blue square smiley-style avatar, add a Kids icon, and add circular outline buttons on the hover card."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The nav labels, page title and 'Select Your Preferences' match. The implementation shows the default 'All Languages' where the reference shows 'English', and it shows 'Not available' rows and '60 titles' / 'All original languages', none of which appear in the reference. 'Kids' is missing.",
+      "fix": "Default the language select to a concrete language such as 'English'. Show 'Original Language' / 'Dubbing' / 'Subtitles' only as options in the mode dropdown. Remove the 'Not available' and count/filter captions. Add the 'Kids' label."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Title grid: the implementation uses 9 columns of portrait 2:3 posters; the reference uses 6 columns of landscape 16:9 tiles with wide row spacing.",
+    "Preferences area (top right): the implementation shows a 3-row table with a native select and 'Not available' text; the reference shows two inline bordered dropdowns (mode + language) with dark open menus.",
+    "Header band: the implementation adds a hero backdrop image behind the title; the reference has a plain dark background.",
+    "Tiles: the reference shows 'TOP 10' corner badges and red 'Recently Added' / 'New Season' / 'Live Now' bottom badges; the implementation has none.",
+    "Hover preview card: the reference shows an expanded card with play / add / like / expand buttons, a TV-MA / duration / HD row and genre tags; the implementation has no equivalent.",
+    "Nav: the reference highlights the active 'Browse by Languages' item with a gray pill; the implementation only bolds it.",
+    "Header right: the reference has a Kids link with an icon; the implementation omits it.",
+    "Below the header: the implementation adds a '60 titles' / 'All original languages' meta row that the reference doesn't have."
+  ],
+  "fixes": [
+    "Change the grid to 6 columns of 16:9 landscape backdrop tiles with title artwork, about 8px column gaps and generous row gaps.",
+    "Replace the preferences table with 'Select Your Preferences' plus two custom white-bordered dropdowns (mode: Original Language/Dubbing/Subtitles; language list) in one row, aligned with the page title.",
+    "Remove the hero backdrop and the '60 titles' / 'All original languages' meta row.",
+    "Add 'TOP 10' corner badges and red bottom badges ('Recently Added', 'New Season') on tiles.",
+    "Add the gray pill highlight to the active nav item and a Kids icon + label before the avatar.",
+    "Implement the tile hover expansion card with circular action buttons, a maturity / duration / HD row and genre tags."
+  ],
+  "summary": "The implementation gets the Netflix chrome and page title right, but its portrait-poster grid, table-style preferences panel, added hero image and missing badges, Kids link and active-nav pill set it clearly apart from the reference's landscape-tile, inline-dropdown design."
+}
+```

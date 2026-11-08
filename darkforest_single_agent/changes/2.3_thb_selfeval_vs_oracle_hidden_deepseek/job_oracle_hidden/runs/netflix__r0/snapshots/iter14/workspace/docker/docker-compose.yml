@@ -1,0 +1,40 @@
+services:
+  database:
+    build:
+      context: ../app/database
+    environment:
+      POSTGRES_DB: netflix
+      POSTGRES_USER: netflix
+      POSTGRES_PASSWORD: netflix
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netflix -d netflix"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../app/backend
+    environment:
+      DATABASE_URL: postgresql://netflix:netflix@database:5432/netflix
+      JWT_SECRET: netflix-clone-local-secret-change-me
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../app/frontend
+    environment:
+      VITE_API_PROXY: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+      - "5173:3000"
+    restart: unless-stopped
+

@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1ba13-0377-7853-b127-a9b8de079039",
+ "num_turns": 47,
+ "commands": 14,
+ "usage": {
+  "input_tokens": 6191418,
+  "cached_input_tokens": 4184832,
+  "cache_write_input_tokens": 0,
+  "output_tokens": 6344,
+  "reasoning_output_tokens": 2970
+ },
+ "is_error": false,
+ "result": "KEY: VIOLET-2208-CEDAR",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 64.8,
+ "_stderr": ""
+}

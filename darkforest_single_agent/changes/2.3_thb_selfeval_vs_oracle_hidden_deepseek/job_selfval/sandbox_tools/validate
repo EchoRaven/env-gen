@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""validate: run env-gen's api_smoke on a snapshot of /workspace, outside this sandbox, and print the report.
+
+  validate                 snapshot /workspace now, wait for the report
+  validate --wait ID       keep waiting for an earlier request
+  validate --last          print the most recent report again
+  validate --contract      print the frozen contract the validator tests against
+
+One validation is a clean `docker compose down -v && up --build` of /workspace/docker/docker-compose.yml plus the
+checks; it takes about 1-5 minutes, longer on a cold build. Give the Bash call a long timeout (e.g. 1800000 ms) or
+run it in the background. The number of calls per iteration is limited; the report says how many are left.
+"""
+import json, os, sys, time, uuid
+
+IO = "/validate_io"
+WAIT_S = int(os.environ.get("THBVAL_WAIT_S", "1500"))
+
+
+def wait(rid):
+    resp = os.path.join(IO, "responses", f"{rid}.txt")
+    t0 = time.time()
+    while time.time() - t0 < WAIT_S:
+        if os.path.exists(resp):
+            print(open(resp).read())
+            return 0
+        time.sleep(5)
+    print(f"Still running after {WAIT_S}s. Run `validate --wait {rid}` to keep waiting.")
+    return 2
+
+
+def main(argv):
+    if argv[:1] == ["--contract"]:
+        print(open("/opt/thbval-contract.json").read())
+        return 0
+    if argv[:1] == ["--last"]:
+        done = sorted(os.listdir(os.path.join(IO, "responses")))
+        print(open(os.path.join(IO, "responses", done[-1])).read() if done else "No report yet.")
+        return 0
+    if argv[:1] == ["--wait"] and len(argv) == 2:
+        return wait(argv[1])
+    if argv:
+        print(__doc__)
+        return 1
+    rid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    tmp = os.path.join(IO, "requests", f".{rid}.json")
+    json.dump({"id": rid, "time": time.time()}, open(tmp, "w"))
+    os.rename(tmp, os.path.join(IO, "requests", f"{rid}.json"))
+    print(f"Validation request {rid} queued; snapshotting /workspace and running env-gen api_smoke ...", flush=True)
+    return wait(rid)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

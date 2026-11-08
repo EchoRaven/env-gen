@@ -1,0 +1,1 @@
+Run `cat /workspace/blk_01.txt`, then `cat /workspace/blk_02.txt`, and so on up to `cat /workspace/blk_14.txt`: fourteen separate commands, one at a time, each printing the whole file. Then reply with the KEY line printed by the last file.

@@ -1,0 +1,12 @@
+{
+  "base_experiment": "../../../0_baxbench_nl2_tests",
+  "task": "netflix",
+  "iters": 2,
+  "runs": 1,
+  "iter_timeout_s": 2400,
+  "max_validate_calls_per_iter": 20,
+  "validate_wait_s": 1500,
+  "node_dir": "/home/user/.nvm/versions/node/v22.22.1",
+  "worker": "codex-0.163.0 + deepseek-v4.1-flash (API, through ../scripts/llm_gateway.py), settings in ../common/codex.json",
+  "smoke_note": "2.3 e2e smoke copy: fewer iterations, shorter timeout; code identical to ../../job_selfval"
+}

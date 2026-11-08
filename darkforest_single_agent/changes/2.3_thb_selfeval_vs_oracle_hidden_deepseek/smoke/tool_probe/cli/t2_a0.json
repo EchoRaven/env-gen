@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1ba11-4e6a-7e73-b0d5-f94e8a73d8a6",
+ "num_turns": 4,
+ "commands": 0,
+ "usage": {
+  "input_tokens": 69745,
+  "cached_input_tokens": 61696,
+  "cache_write_input_tokens": 0,
+  "output_tokens": 3142,
+  "reasoning_output_tokens": 1100
+ },
+ "is_error": false,
+ "result": "`BLUE-HERON-42` followed by a newline.",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 1.0,
+ "_stderr": ""
+}

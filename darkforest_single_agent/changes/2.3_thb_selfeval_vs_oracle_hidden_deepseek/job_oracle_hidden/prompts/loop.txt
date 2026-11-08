@@ -1,0 +1,6 @@
+How each iteration works:
+1. Continue from everything already in /workspace and in this conversation. Using the current state and the latest evaluator report, produce a better version.
+2. Test it yourself with whatever you can run here: builds, your own tests, a local database, a headless browser, and your own review for bugs and security holes. You cannot run the evaluator yourself.
+3. When you are confident this version is ready, submit it by ending your turn with a short summary of what changed and what is still missing or broken. Each submission is evaluated once, and the iteration ends there.
+
+After you submit, the harness snapshots /workspace and evaluates it. You will receive the report of the automated checks described above at the start of the next iteration. Every submission is also evaluated by further checks that you cannot see, against the task text, the spec and the reference screenshots. Work autonomously and do not ask questions.

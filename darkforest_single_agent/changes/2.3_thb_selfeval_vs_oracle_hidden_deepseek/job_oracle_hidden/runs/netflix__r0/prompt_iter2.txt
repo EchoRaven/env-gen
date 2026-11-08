@@ -1,0 +1,37 @@
+This is iteration 2 of 20. The automated checks' report on the version you submitted in iteration 1:
+
+env-gen api_smoke: FAILED - 13/14 checks passed. Business-chain steps ok: 5/8.
+Summary: FAILED: business_chain
+
+Checks:
+- [pass] frontend_navigable: 17 page component(s), 16 route(s)
+- [pass] frontend_fallback_pages: 0/7 pages are framework fallback ()
+- [pass] docker_up
+- [pass] backend_health
+- [pass] auth_register_login
+- [pass] business_endpoints_reachable: 15 endpoint(s) reachable
+- [pass] business_endpoints_implemented: 15 registered-implemented endpoint(s) serve their route
+- [pass] business_endpoints_correct_shape: 15 endpoint(s) match the item/items contract
+- [pass] business_writes_persist: no parameterless POST endpoint to probe | warnings: POST /api/profiles ok but GET readback is not an items[] list — persistence not verifiable; POST /api/my-list ok but GET readback is not an items[] list — persistence not verifiable
+- [pass] auth_enforced_401
+- [pass] auth_password_is_checked
+- [fail] business_chain: [framework_default_crud] POST /api/my-list → 400 (expected [200, 201]; {"detail":"Create a profile before using this feature"})
+- [pass] frontend_dead_controls: all interactive pages bind their controls
+- [pass] frontend_reachable: GET :3000/ → 200
+
+Business chain framework_default_crud:
+- [ok] POST /auth/register -> 200 (expect [200, 201, 409])
+- [ok] POST /auth/register -> 200 (expect [200, 201, 409])
+- [broken] POST /api/my-list -> 400 (expect [200, 201]): {"detail":"Create a profile before using this feature"}
+- [ok] GET /api/my-list -> 200 (expect [200])
+- [skipped] DELETE /api/my-list/${api_my_list_id} -> None (expect None): skipped — depends on api_my_list_id from a failed earlier step
+- [ok] POST /api/profiles -> 200 (expect [200, 201])
+- [ok] GET /api/profiles -> 200 (expect [200])
+- [skipped] PUT /api/my-list/${api_my_list_id} -> None (expect None): skipped — depends on api_my_list_id from a failed earlier step
+
+How each iteration works:
+1. Continue from everything already in /workspace and in this conversation. Using the current state and the latest evaluator report, produce a better version.
+2. Test it yourself with whatever you can run here: builds, your own tests, a local database, a headless browser, and your own review for bugs and security holes. You cannot run the evaluator yourself.
+3. When you are confident this version is ready, submit it by ending your turn with a short summary of what changed and what is still missing or broken. Each submission is evaluated once, and the iteration ends there.
+
+After you submit, the harness snapshots /workspace and evaluates it. You will receive the report of the automated checks described above at the start of the next iteration. Every submission is also evaluated by further checks that you cannot see, against the task text, the spec and the reference screenshots. Work autonomously and do not ask questions.

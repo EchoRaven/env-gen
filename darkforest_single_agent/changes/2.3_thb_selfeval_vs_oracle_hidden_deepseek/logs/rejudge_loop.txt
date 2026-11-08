@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/user/project/shabi_forest/changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/scripts/rejudge.py", line 45, in <module>
+    for t in sorted(os.listdir(H)):
+                    ^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/user/project/shabi_forest/changes/2.3_thb_selfeval_vs_oracle_hidden_deepseek/job_oracle_hidden/evals/hidden'
+2026-11-08T05:36:51-05:00 nothing left; exit

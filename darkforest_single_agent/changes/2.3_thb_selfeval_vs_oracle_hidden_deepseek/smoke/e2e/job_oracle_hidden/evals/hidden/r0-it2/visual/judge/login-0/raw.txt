@@ -1,0 +1,69 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both have the logo at top-left, a centred ~490px form column and a dark footer band, so the overall skeleton matches. The differences: the reference has a full-width header strip with a hairline divider under it, and the implementation has no divider. The reference puts the form straight on the page, while the implementation wraps it in a black card panel (~620px) over a photo background. In the reference the footer starts at ~y905; in the implementation it starts at ~y1017. The implementation's footer text sits further left (x~153) than the logo (x~206), but in the reference the footer lines up with the logo (x~213).",
+      "fix": "Remove the black card container so the form sits directly on the page background. Add a 1px divider under the header at ~100px. Align the footer's left edge with the logo and start the footer around y~905."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: logo, heading, subtitle, email input and red primary button. The reference uses a one-step 'Continue' flow with only an email field. The implementation adds a password field with a 'Show' toggle, an 'OR' divider and a 'Use demo account' link, none of which are in the reference. It is missing the 'Get Help' dropdown with its chevron and the footer link grid: phone line plus 4 columns (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information). The reference input uses a floating label (small label above the value); the implementation shows a placeholder-only field.",
+      "missing": [
+        "Get Help dropdown toggle with chevron",
+        "Footer 4-column underlined link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)",
+        "Footer phone line ('Questions? Call ...')",
+        "Floating-label input treatment",
+        "Header divider line"
+      ],
+      "fix": "Change to a single-step form: email input with a floating label, then a 'Continue' button, then a 'Get Help ⌄' toggle, then the reCAPTCHA note. Remove the password field, the 'OR' divider and the demo link (or hide them in a later step). Add the footer link grid."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Both are flat and minimal with slightly rounded inputs and button and a dark theme. The reference uses a plain, smooth dark-maroon-to-black gradient. The implementation adds a busy illustrated photo backdrop and an elevated black card, which reads as the old Netflix login look instead of the new one.",
+      "fix": "Replace the photo backdrop with a smooth vertical gradient (deep maroon #3a1517 at the top fading to #000 by ~80% height). Remove the card."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both have a dark scheme with a red CTA and white heading text. The reference button is a slightly orange-red (#d4342a-ish) and the implementation's is pure Netflix red (#e50914). The reference subtitle is light grey throughout; the implementation mixes grey and white. The reference input surface is near-black with a light grey border, which is close to the implementation. The reference's red tint comes from the gradient; the implementation's comes from the photo.",
+      "fix": "Make the button ~#d6342c. Show the subtitle in uniform light grey. Use a gradient background instead of the image."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "The reference uses Netflix Sans, a geometric humanist face with a rounder bold heading. The implementation uses Arial/Helvetica, which looks generic. The size hierarchy is similar: ~36px bold heading, ~20px subtitle. The reference subtitle is larger (~20px) than the implementation's (~15px). The reference footer links are ~16px and underlined; the implementation footer text is a small ~13px grey line.",
+      "fix": "Load Netflix Sans or a close geometric sans (e.g. Inter, DM Sans). Set the subtitle to 20px grey, the input label to 13px above an 18px value, the button to 20px semibold, and footer links to 16px underlined."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The red NETFLIX wordmark logo matches in style and position. The reference's only icon is the chevron on 'Get Help', which the implementation lacks. The implementation adds a large background photo that the reference doesn't have.",
+      "fix": "Add a thin line chevron-down next to 'Get Help'. Remove the background imagery."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The heading 'Enter your info to sign in' matches, and the subtitle and 'Email or mobile number' label are close. The button reads 'Sign In' where the reference has 'Continue'. The implementation adds 'Password', 'Show', 'OR' and 'Use demo account', which aren't in the reference. The legal note reads 'protected by local authentication… PBKDF2' instead of 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' The footer reads 'Questions? Sign in to open your account…' instead of 'Questions? Call 1-844-…' plus the links.",
+      "fix": "Change the button to 'Continue'. Add 'Get Help'. Change the legal line to match the reCAPTCHA wording. Change the footer to 'Questions? Call 1-844-569-7700 (Toll-Free)' and add the link labels."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "form area: the implementation shows a two-field email + password form with a 'Sign In' button; the reference is a single email field with a 'Continue' button",
+    "below the button: the implementation adds an 'OR' divider and a 'Use demo account' link; the reference has a 'Get Help ⌄' dropdown toggle there instead",
+    "page background: the implementation uses a large illustrated warrior photo with a dark overlay; the reference uses a plain maroon-to-black gradient",
+    "form container: the implementation wraps the form in an elevated black card panel; in the reference the form sits directly on the background",
+    "footer: the reference has a 'Questions? Call…' line and a 4-column underlined link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information); the implementation has one small grey sentence",
+    "header: the reference has a hairline divider under the logo bar; the implementation has none",
+    "email input: the reference uses a floating small label above the value text; the implementation uses a centred placeholder",
+    "typography: the implementation uses Arial/Helvetica instead of the geometric Netflix Sans-like face, and its subtitle is smaller",
+    "legal note: the wording differs (local auth/PBKDF2 instead of Google reCAPTCHA), and the implementation's text is smaller and wraps onto two lines",
+    "footer alignment: the implementation's footer text starts left of the logo's left edge; the reference aligns them"
+  ],
+  "fixes": [
+    "Replace the photo background and the black card with a full-bleed vertical gradient (#3b1416 at the top to #000 by ~80% height). Place the form directly on it, centred, ~490px wide.",
+    "Change to a single-step form: an email input with a floating label ('Email or mobile number' at 13px above the value), then a full-width ~#d6342c 'Continue' button. Remove the password field, the 'Show' toggle, the 'OR' divider and the 'Use demo account' link.",
+    "Add a 'Get Help' text toggle with a chevron-down ~50px below the button, then the grey 14px line 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Add a 1px subtle divider under the header (~100px tall), with the logo left-aligned at ~213px.",
+    "Rebuild the footer as a #161616 band: 'Questions? Call 1-844-569-7700 (Toll-Free)' followed by a 4-column grid of underlined grey links (FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information), left-aligned with the logo.",
+    "Switch the font to a Netflix Sans-like geometric sans. Set the heading to ~36px bold, the subtitle to ~20px light grey, and the button label to 20px semibold."
+  ],
+  "summary": "Same logo, heading and centred dark login with a red CTA, but the implementation uses the old card-on-photo, email+password pattern instead of the reference's gradient one-step email/Continue flow with Get Help and a link-grid footer."
+}

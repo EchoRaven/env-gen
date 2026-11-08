@@ -1,0 +1,74 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both use the same top bar: logo on the left, horizontal nav, then search, bell and avatar with a caret on the right. The dropdown is anchored under the avatar at the top-right in both. Differences: the reference dropdown is taller (~350px) and sits in a slightly different place, starting just below the header. Behind the menu, the reference shows the 'Browse by Languages' page (page title, 'Select Your Preferences' language dropdown, a 6-column tile grid). The implementation shows a full-bleed home hero with a 'Trending Now' row.",
+      "fix": "Open the account menu over the 'Browse by Languages' grid page, matching the reference. Make the dropdown ~275px wide, right-aligned under the avatar, with ~58px rows."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: a profile row with an avatar, Manage Profiles, Account, a Help item, Sign out, and the caret. Missing: the leading icons on each menu row (pencil, transfer, person, question mark), the 'Transfer Profile' item, and the Kids shortcut in the header (Kids avatar plus 'Kids' label next to the bell). The active nav item 'Browse by Languages' has a pill-shaped highlight in the reference; the implementation highlights 'Home' with bold text only. The implementation also adds an extra divider between Manage Profiles and Account.",
+      "missing": [
+        "Transfer Profile menu item",
+        "Pencil icon on Manage Profiles",
+        "Transfer icon on Transfer Profile",
+        "Person icon on Account",
+        "Question-mark icon on Help Center",
+        "Header Kids profile shortcut (kids avatar + 'Kids' label)",
+        "Pill highlight on the active nav item"
+      ],
+      "fix": "Change the menu to: [Kids avatar] Kids / [pencil] Manage Profiles / [transfer] Transfer Profile / [person] Account / [?] Help Center / divider / Sign out of Netflix. Remove the divider between Manage Profiles and Account. Add the Kids avatar and label before the profile avatar in the header."
+    },
+    "style": {
+      "score": 0.45,
+      "notes": "The reference menu has rounded corners (~8px), a soft dark-grey surface with no visible border, and airy ~58px rows. The implementation's menu has square corners, a black surface with a hairline grey border, and compact ~38px rows. The reference's active nav item is a rounded pill; the implementation has no pill.",
+      "fix": "Give the menu an 8px border radius, no border, a soft shadow, ~16px padding and ~58px row height. Use a pill (full radius, #333 background) for the active nav item."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use a dark scheme with white text and Netflix-red branding. The reference menu surface is dark grey (~#222) with light-grey text. The implementation's menu is near-black with a grey border.",
+      "fix": "Set the menu background to ~#232323 with no border, and the active nav pill to ~#333."
+    },
+    "typography": {
+      "score": 0.45,
+      "notes": "Both use sans-serif type. Reference menu labels are ~17px regular, and 'Sign out of Netflix' is regular and left-aligned. The implementation's labels are ~13px, and its sign-out link is bold and centred. Nav labels are also smaller in the implementation.",
+      "fix": "Set menu items to 17px regular. Make 'Sign out of Netflix' 17px regular and left-aligned. Set nav links to ~17px."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "Every reference menu row has a ~24px outline icon (pencil, transfer, person, question mark), and the profile row uses the colourful Kids avatar as a rounded square. The implementation's rows have no icons, and its profile avatar is a generic blue silhouette. The header Kids avatar is missing.",
+      "fix": "Add 24px outline icons, ~2px stroke, to the left of each menu label, with ~16px spacing. Add the Kids avatar in the header."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Matches: 'Manage Profiles', 'Account', 'Sign out of Netflix'. Differs: 'Help Centre' vs 'Help Center'. 'Transfer Profile' is missing.",
+      "fix": "Rename 'Help Centre' to 'Help Center' and add 'Transfer Profile'."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown: none of the rows have the leading outline icons the reference shows (pencil, transfer, person, question mark)",
+    "Account dropdown: the 'Transfer Profile' item between Manage Profiles and Account is missing",
+    "Account dropdown: square corners, a hairline border, a black surface and compact ~38px rows. The reference uses a rounded (~8px), borderless dark-grey panel with airy ~58px rows",
+    "Account dropdown: labels are ~13px. The reference uses ~17px",
+    "Account dropdown: 'Sign out of Netflix' is bold and centred. The reference sets it regular and left-aligned",
+    "Account dropdown: an extra divider sits between Manage Profiles and Account. The reference has a single divider, just above Sign out",
+    "Header right: the Kids shortcut (Kids avatar + 'Kids' label) between the bell and the profile avatar is missing",
+    "Header nav: the active item is shown as bold text. The reference uses a rounded grey pill highlight",
+    "Background page: the implementation shows the home hero. The reference shows the Browse by Languages page with its title, preference dropdown and tile grid",
+    "Copy: 'Help Centre' should be 'Help Center'"
+  ],
+  "fixes": [
+    "Restyle the account dropdown: 8px radius, ~#232323 background, no border, soft shadow, ~16px padding, ~58px rows, 17px regular labels",
+    "Add a 24px outline icon to the left of each row: pencil for Manage Profiles, transfer for Transfer Profile, person for Account, question mark for Help Center",
+    "Add a 'Transfer Profile' item and rename 'Help Centre' to 'Help Center'",
+    "Remove the divider between Manage Profiles and Account. Keep only the divider above 'Sign out of Netflix' and make that link left-aligned and regular weight",
+    "Add the Kids avatar and 'Kids' label in the header between the bell and the profile avatar",
+    "Give the active nav item a rounded grey pill background",
+    "Render the menu over the Browse by Languages grid page to match the reference state"
+  ],
+  "summary": "The menu's anchoring and core items match, but it is missing the row icons and the Transfer Profile item, and it uses square, cramped, small-type styling instead of the reference's rounded, airy panel. The header is also missing the Kids shortcut and the active-nav pill."
+}
+```

@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Both show the same structure: a centered dark modal over a dimmed home page, the synopsis block at the top, an 'Episodes' header with a control on the right, and a vertical list of rows (number, thumbnail, title, duration, synopsis) separated by hairlines. Differences: the reference modal is wider (~1085px against ~960px). In the reference, the duration is right-aligned near the row's right edge (~x=1366). In the implementation it sits right next to the title (~x=900), so the right half of every row is empty. Implementation rows are also shorter (~112px against ~146px). The implementation adds a full-width divider above the Episodes header that the reference doesn't have.",
+      "fix": "Widen the modal to ~1085px. Make each episode row a flex layout: number column ~80px, thumbnail ~170px, then a text column that fills the remaining width, with the title on the left and the duration right-aligned at the end of the text column. Set row height to ~146px with ~24px vertical padding. Remove the divider above the Episodes header."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "The implementation has the Episodes heading, episode rows, play-overlay on hover, a highlighted row state and row dividers. The season control differs: the reference shows plain right-aligned text with no box, while the implementation uses a bordered native <select> dropdown. Episode synopses show the placeholder 'Episode synopsis is not available.' where the reference has two-line descriptions. Every thumbnail reuses the same series artwork instead of a distinct still per episode.",
+      "missing": [
+        "plain-text season/title label at the right of the Episodes header (replaced by a boxed select)",
+        "multi-line episode synopsis text",
+        "distinct per-episode still thumbnails"
+      ],
+      "fix": "Replace the bordered <select> with an unboxed, right-aligned ~20px white text label (a borderless, background-less dropdown trigger if it has to stay interactive). Fill synopses with real 1–2 line descriptions, and give each episode its own still image."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use a flat dark modal, hairline row dividers and a lighter rounded background on the active row. The reference is airier, with larger thumbnails and more padding per row. The implementation's active-row highlight is subtler, and its boxed select adds a bordered element the reference doesn't have.",
+      "fix": "Raise row padding to ~24px, and give the active row a #333-ish background with ~4px radius that spans the full list width. Remove the select border."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both use a dark #181818-style modal over a dimmed page, white titles, light-gray synopsis text and dark-gray dividers. The highlighted-row tone is close. No significant hue differences.",
+      "fix": "Lighten the active-row background slightly (~#333), and make synopsis text ~#d2d2d2 so it matches the reference's brightness."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. Implementation sizes are noticeably smaller: episode titles ~14px against ~17px bold, synopses ~12px against ~15px, durations ~12px against ~17px. The reference shows episode numbers as unpadded '1', '2' at ~26px. The implementation uses zero-padded '01', '02' at ~20px.",
+      "fix": "Episode title: 17px bold. Duration: 17px regular, right-aligned. Synopsis: 15px with ~1.45 line-height. Episode number: unpadded, ~26px regular, light gray."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The play overlay on the hovered thumbnail exists in both. In the reference it is a circular outlined button (white ring on a translucent dark disc). In the implementation it is a bare white triangle. Thumbnails are ~148x83 in the implementation against ~170x96 in the reference. Both are 16:9 cover crops with slight rounding.",
+      "fix": "Render the hover play icon as a ~54px circle with a white 2px ring, a translucent black fill and a centered white triangle. Enlarge thumbnails to ~170x96."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The 'Episodes' heading matches. The right-side header control reads 'Season 1' in a dropdown style; the reference shows a plain label there. Episode titles follow a generic 'Episode N' pattern, and synopses fall back to 'Episode synopsis is not available.' placeholder copy.",
+      "fix": "Show real episode titles and synopses, and render the season/series label as plain text rather than as a form control."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Episode rows: the implementation puts the duration right after the title (~x=900) and leaves the right half of each row empty. The reference right-aligns the duration near the row's right edge, and its synopsis runs across the full text column.",
+    "Episode rows: the implementation shows the placeholder 'Episode synopsis is not available.' where the reference shows two-line descriptions.",
+    "Episodes header, right side: the implementation uses a bordered native select box ('Season 1'); the reference shows unboxed plain white text.",
+    "Typography in rows: implementation titles, durations and synopses are ~20–30% smaller than the reference's.",
+    "Episode numbers: the implementation zero-pads them ('01') at a smaller size; the reference uses large unpadded numerals ('1').",
+    "Thumbnails: smaller in the implementation (~148px wide against ~170px), and they all repeat the same series key art.",
+    "Hover play icon: a bare triangle in the implementation; the reference uses a circled play button.",
+    "Modal: narrower in the implementation (~960px against ~1085px), and it adds a full-width divider above the Episodes heading."
+  ],
+  "fixes": [
+    "Restructure each episode row as number | 170x96 thumbnail | text column (fills the remaining width), with the title on the left and the duration right-aligned on the same line, and the synopsis below spanning the column.",
+    "Increase type sizes: titles 17px bold, durations 17px, synopses 15px, numbers ~26px with no zero-padding.",
+    "Replace the boxed season <select> with a borderless, right-aligned plain-text label.",
+    "Use a circular, ring-outlined play button for the thumbnail hover.",
+    "Widen the modal to ~1085px, increase row padding to ~24px, and remove the divider above Episodes.",
+    "Populate real episode titles, synopses and per-episode stills instead of placeholder copy and repeated key art."
+  ],
+  "summary": "The implementation has the same skeleton (dark modal, Episodes header, numbered thumbnail rows with dividers and a hover highlight), but rows are compact and left-crowded with small type, the season control is a boxed select instead of plain text, and synopses are placeholder text."
+}
+```

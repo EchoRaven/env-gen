@@ -1,0 +1,2 @@
+{"iter": 1, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 11, "endpoints_total": 15, "chain_steps_ok": 7, "chain_steps_total": 8}, "summary": "all api_smoke checks passed", "at": "2026-11-08T03:12:26"}
+{"iter": 2, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 11, "endpoints_total": 15, "chain_steps_ok": 8, "chain_steps_total": 8}, "summary": "all api_smoke checks passed", "at": "2026-11-08T03:16:05"}

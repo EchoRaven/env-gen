@@ -1,0 +1,1337 @@
+{
+ "screens": {
+  "landing": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.68,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.72,
+      "notes": "The overall structure matches: logo at top left, Sign In at top right, a centred hero with headline, subline, prompt and email form, a curved divider, and a promo strip below. Two things differ. The hero in the implementation is taller, so the curve sits at about y\u22481000 instead of y\u2248900. The promo is laid out as a full-width row with plain text, where the reference puts it in a centred, inset roun",
+      "fix": "Shorten the hero so the curved divider sits at about 82% of the viewport height. Wrap the promo in an inset rounded card (about 1480px wide, centred) with the popcorn icon to its left."
+     },
+     "components": {
+      "score": 0.65,
+      "notes": "The logo, Sign In button, headline, subline, prompt, email input and Get Started button with chevron are all present. The language dropdown is missing. 'Learn More' is a text link with a chevron instead of a filled grey button. The promo card and popcorn icon are missing.",
+      "fix": "Add an outlined language select to the left of Sign In. Turn Learn More into a filled grey (#414141-ish) rounded button. Add the popcorn image and the card container.",
+      "missing": [
+       "Language selector dropdown (globe icon, 'English', caret) in the header",
+       "Popcorn illustration next to the promo card",
+       "Rounded promo card container",
+       "Filled grey 'Learn More' button"
+      ],
+      "missing_total": 4
+     },
+     "style": {
+      "score": 0.65,
+      "notes": "The reference uses a tilted, angled mosaic of posters with a strong dark overlay. The implementation uses upright, vertical poster columns. Its curve is a thin purple arc over black, while the reference has a red-to-pink glowing arc with a blue-purple gradient underneath. The reference promo is a rounded card with a gradient; the implementation has no card.",
+      "fix": "Rotate the background poster grid about 15\u00b0 in a perspective mosaic. Make the curve a red/pink gradient border with a navy glow below. Give the promo card about 16px radius and a dark purple-to-navy gradient fill."
+     },
+     "color": {
+      "score": 0.75,
+      "notes": "Dark scheme, Netflix red CTAs and white text all match. The curve accent is purple in the implementation but red/pink in the reference. The area below the hero is plain black instead of a navy/purple gradient. The promo surface colour is missing.",
+      "fix": "Change the curve stroke to a red\u2192pink gradient. Add a radial navy-blue glow below it. Fill the promo card with a #1d1a3a-like gradient."
+     },
+     "typography": {
+      "score": 0.55,
+      "notes": "The headline uses a condensed display face (Anton-like), where the reference uses Netflix Sans bold geometric sans. The subline 'Starts at $8.99' is regular weight and larger in the implementation; the reference has it bold at about 20px. Body copy is Arial-like rather than Netflix Sans. The promo title and subtitle are too small compared with the reference (about 22px bold / 17px).",
+      "fix": "Set the headline in a bold geometric sans (Inter/Helvetica Neue 800, about 64px, normal width). Make the subline bold at about 20px. Set promo text to 22px bold and 17px regular in white."
+     },
+     "iconography": {
+      "score": 0.7,
+      "notes": "The red wordmark and the Get Started chevron match. The language icon and the popcorn illustration are missing. Poster imagery is upright instead of tilted with rounded corners.",
+      "fix": "Add a translate icon to the language select and a popcorn bucket image (about 80px) to the left of the promo card. Render the background posters as rounded, tilted tiles."
+     },
+     "copy": {
+      "score": 0.92,
+      "notes": "Headline, subline, prompt, placeholder, Get Started, Sign In, promo text and Learn More copy all match. The 'English' language label is absent because the selector is missing.",
+      "fix": "Add the 'English' label in the language selector."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Header right: the reference shows an outlined 'English' language dropdown to the left of Sign In; the implementation has only Sign In.",
+     "Bottom promo: the reference uses an inset rounded gradient card with a popcorn icon to its left and a filled grey 'Learn More' button; the implementation shows plain small text across the full width and a text-link 'Learn More >'.",
+     "Hero headline: the implementation uses a condensed display font (Anton-like); the reference uses bold Netflix Sans geometric sans.",
+     "Hero background: the reference shows a tilted, angled poster mosaic with rounded tiles; the implementation shows upright vertical poster columns.",
+     "Curved divider: the reference has a red/pink arc with a navy-blue glow beneath at about y=900; the implementation has a thin purple arc over black, lower at about y=1000.",
+     "Subline 'Starts at $8.99. Cancel anytime.': the reference is bold at about 20px; the implementation is regular weight and larger.",
+     "Promo text in the implementation is much smaller and greyer than the reference's 22px bold / 17px white."
+    ]
+   ]
+  },
+  "login": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.55,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.6,
+      "notes": "Both have the logo at top-left, a centred ~490px form column and a dark footer band, so the overall skeleton matches. The differences: the reference has a full-width header strip with a hairline divider under it, and the implementation has no divider. The reference puts the form straight on the page, while the implementation wraps it in a black card panel (~620px) over a photo background. In the r",
+      "fix": "Remove the black card container so the form sits directly on the page background. Add a 1px divider under the header at ~100px. Align the footer's left edge with the logo and start the footer around y~905."
+     },
+     "components": {
+      "score": 0.45,
+      "notes": "Present: logo, heading, subtitle, email input and red primary button. The reference uses a one-step 'Continue' flow with only an email field. The implementation adds a password field with a 'Show' toggle, an 'OR' divider and a 'Use demo account' link, none of which are in the reference. It is missing the 'Get Help' dropdown with its chevron and the footer link grid: phone line plus 4 columns (FAQ,",
+      "fix": "Change to a single-step form: email input with a floating label, then a 'Continue' button, then a 'Get Help \u2304' toggle, then the reCAPTCHA note. Remove the password field, the 'OR' divider and the demo link (or hide them in a later step). Add the footer link grid.",
+      "missing": [
+       "Get Help dropdown toggle with chevron",
+       "Footer 4-column underlined link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Prefe",
+       "Footer phone line ('Questions? Call ...')",
+       "Floating-label input treatment",
+       "Header divider line"
+      ],
+      "missing_total": 5
+     },
+     "style": {
+      "score": 0.6,
+      "notes": "Both are flat and minimal with slightly rounded inputs and button and a dark theme. The reference uses a plain, smooth dark-maroon-to-black gradient. The implementation adds a busy illustrated photo backdrop and an elevated black card, which reads as the old Netflix login look instead of the new one.",
+      "fix": "Replace the photo backdrop with a smooth vertical gradient (deep maroon #3a1517 at the top fading to #000 by ~80% height). Remove the card."
+     },
+     "color": {
+      "score": 0.7,
+      "notes": "Both have a dark scheme with a red CTA and white heading text. The reference button is a slightly orange-red (#d4342a-ish) and the implementation's is pure Netflix red (#e50914). The reference subtitle is light grey throughout; the implementation mixes grey and white. The reference input surface is near-black with a light grey border, which is close to the implementation. The reference's red tint ",
+      "fix": "Make the button ~#d6342c. Show the subtitle in uniform light grey. Use a gradient background instead of the image."
+     },
+     "typography": {
+      "score": 0.6,
+      "notes": "The reference uses Netflix Sans, a geometric humanist face with a rounder bold heading. The implementation uses Arial/Helvetica, which looks generic. The size hierarchy is similar: ~36px bold heading, ~20px subtitle. The reference subtitle is larger (~20px) than the implementation's (~15px). The reference footer links are ~16px and underlined; the implementation footer text is a small ~13px grey l",
+      "fix": "Load Netflix Sans or a close geometric sans (e.g. Inter, DM Sans). Set the subtitle to 20px grey, the input label to 13px above an 18px value, the button to 20px semibold, and footer links to 16px underlined."
+     },
+     "iconography": {
+      "score": 0.7,
+      "notes": "The red NETFLIX wordmark logo matches in style and position. The reference's only icon is the chevron on 'Get Help', which the implementation lacks. The implementation adds a large background photo that the reference doesn't have.",
+      "fix": "Add a thin line chevron-down next to 'Get Help'. Remove the background imagery."
+     },
+     "copy": {
+      "score": 0.55,
+      "notes": "The heading 'Enter your info to sign in' matches, and the subtitle and 'Email or mobile number' label are close. The button reads 'Sign In' where the reference has 'Continue'. The implementation adds 'Password', 'Show', 'OR' and 'Use demo account', which aren't in the reference. The legal note reads 'protected by local authentication\u2026 PBKDF2' instead of 'This page is protected by Google reCAPTCHA ",
+      "fix": "Change the button to 'Continue'. Add 'Get Help'. Change the legal line to match the reCAPTCHA wording. Change the footer to 'Questions? Call 1-844-569-7700 (Toll-Free)' and add the link labels."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "form area: the implementation shows a two-field email + password form with a 'Sign In' button; the reference is a single email field with a 'Continue' button",
+     "below the button: the implementation adds an 'OR' divider and a 'Use demo account' link; the reference has a 'Get Help \u2304' dropdown toggle there instead",
+     "page background: the implementation uses a large illustrated warrior photo with a dark overlay; the reference uses a plain maroon-to-black gradient",
+     "form container: the implementation wraps the form in an elevated black card panel; in the reference the form sits directly on the background",
+     "footer: the reference has a 'Questions? Call\u2026' line and a 4-column underlined link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information); the implementation has one small grey sentence",
+     "header: the reference has a hairline divider under the logo bar; the implementation has none",
+     "email input: the reference uses a floating small label above the value text; the implementation uses a centred placeholder",
+     "typography: the implementation uses Arial/Helvetica instead of the geometric Netflix Sans-like face, and its subtitle is smaller",
+     "legal note: the wording differs (local auth/PBKDF2 instead of Google reCAPTCHA), and the implementation's text is smaller and wraps onto two lines",
+     "footer alignment: the implementation's footer text starts left of the logo's left edge; the reference aligns them"
+    ]
+   ]
+  },
+  "browse_home": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.62,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.6,
+      "notes": "Both have the same top nav (logo, 7 links, right-side icons), a hero, then a row heading with a horizontal carousel of 16:9 tiles. The big difference is the hero: the reference puts it in an inset card with rounded corners, about 67px margins on each side, starting below the nav, with dark page background around it. The implementation makes the hero full-bleed and runs it up behind the nav. The re",
+      "fix": "Put the hero in a rounded card (~16px radius) inset 67px left/right, starting about 97px from the top and below the nav bar. Keep the page background dark grey around it. Add the segmented page-indicator line to the right of the row title."
+     },
+     "components": {
+      "score": 0.6,
+      "notes": "Present: logo, nav links, search, bell, avatar with caret, hero title lockup, metadata row, Play and More Info buttons, row title, and tiles. Missing: the pill highlight on the active Home tab, the Kids profile entry, the mute/sound toggle at the top right of the hero, the LIVE badge with its status line, the 'New Episode' tag at the bottom right of the hero, the row pagination indicator, and the ",
+      "fix": "Add a grey pill behind the active nav item, a Kids icon and label before the avatar, a circular mute button at the hero's top right, a red LIVE chip with a status line, a 'New Episode' tag at the hero's bottom right, the row page indicator, and TOP 10 corner badges. Remove the 'Featured' label, the synopsis, the match % and the boxed rating/HD badges.",
+      "missing": [
+       "Active-tab pill highlight on Home",
+       "Kids profile link with icon",
+       "Hero mute/volume button",
+       "LIVE badge + start-time status line",
+       "'New Episode' tag in hero bottom-right",
+       "Row pagination indicator",
+       "TOP 10 badge on tiles"
+      ],
+      "missing_total": 7
+     },
+     "style": {
+      "score": 0.55,
+      "notes": "The reference is the newer rounded Netflix look: the hero card is rounded, the buttons are pills, the active nav item is a pill, and tiles have rounded corners. The implementation uses the older square style: rectangular buttons with small radii, square tiles and a full-bleed hero.",
+      "fix": "Make the Play and More Info buttons fully rounded pills. Round the hero card (~16px) and the tiles (~8px). Add a pill behind the active nav item."
+     },
+     "color": {
+      "score": 0.75,
+      "notes": "Both are dark with a red wordmark, a white Play button and a translucent grey More Info button. In the reference, the nav sits on a warm dark grey gradient and the page around the card is #1f1f1f-ish. The implementation lets the hero image wash up into the nav and adds green match text, which the reference doesn't have.",
+      "fix": "Give the nav and page a solid dark grey (~#1c1c1c to #2a2a2a) background separate from the hero. Remove the green match text. Use a red chip for LIVE."
+     },
+     "typography": {
+      "score": 0.7,
+      "notes": "Both use a sans-serif. The reference's nav links are larger (~17px) and grey, with bold white for the active item. The implementation's nav is smaller (~14px). The reference's metadata row is medium weight (~17px) with dot separators. The implementation uses smaller text with boxed badges. Row titles are similar (bold, ~26px).",
+      "fix": "Set nav links to ~17px in grey (#ccc) with the active item bold white. Show the metadata as a ~17px medium-weight row separated by '\u2022'."
+     },
+     "iconography": {
+      "score": 0.7,
+      "notes": "Search, bell and Play icons match as line/filled glyphs. The reference's avatar is a rounded-square blue smiley, and it also has a Kids icon and a speaker icon, which the implementation lacks. The implementation adds an info icon on More Info, which the reference doesn't show. Tiles are 16:9 in both, but the reference rounds their corners.",
+      "fix": "Use a rounded-square avatar. Add the Kids and speaker icons. Remove the info icon from More Info. Round the tile corners."
+     },
+     "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, Play and More Info all match. The implementation adds a 'Featured' label, '% Match' text and a synopsis. It lacks the 'Kids', 'LIVE' and 'New Episode' labels.",
+      "fix": "Add the 'Kids', 'LIVE' and 'New Episode' labels. Remove the 'Featured' label and the '% Match' text."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Hero: the implementation is full-bleed and runs up behind the nav; the reference is a rounded, inset card below the nav with page margins",
+     "Nav: the implementation has no pill behind the active Home tab",
+     "Nav right: the implementation lacks the Kids profile entry (icon + 'Kids') before the avatar",
+     "Hero top-right: the implementation lacks the circular mute/sound button",
+     "Hero bottom-right: the implementation lacks the 'New Episode' tag",
+     "Hero info block: the implementation lacks the LIVE chip and status line; it adds a 'Featured' label, a synopsis paragraph, green % Match and boxed TV-14/HD badges",
+     "Buttons: the implementation uses rectangular Play/More Info buttons; the reference uses pills, and its More Info has no info icon",
+     "Row header: the implementation lacks the segmented pagination indicator at the right",
+     "Tiles: the implementation has square corners; the reference has rounded corners and a TOP 10 badge"
+    ]
+   ]
+  },
+  "browse_home_rows": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.58,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.62,
+      "notes": "Both have a top nav bar with the logo on the left, links in the middle and icons on the right, then stacked titled rows of horizontal 16:9 carousels. The tile size (5 visible tiles plus a peek of the 6th at the right edge) and the ~64px left gutter match. Differences: the reference shows only rows directly under a solid black header (~88px tall). The implementation still shows the bottom of a hero",
+      "fix": "In this browse-rows state, start the page directly with rows below a solid #141414 header ~88px tall (no hero remnant). Keep a constant gap between rows (~56px heading-to-heading spacing around 286px tiles). Hide rows that have no items instead of rendering empty boxes."
+     },
+     "components": {
+      "score": 0.45,
+      "notes": "Present: logo, 7 nav links, search, bell, avatar with caret, row headings, carousels with a partly visible tile at the right edge. Missing: the rounded pill highlight on the active 'Home' link; the 'Kids' profile entry (kids icon + label); the segmented page-indicator dashes at the top-right of each row; the boxed 'BETA' chip next to 'Games'; the red 'TOP 10' corner badges; the red/white bottom-ce",
+      "missing": [
+       "Active 'Home' pill highlight",
+       "Kids profile entry in header",
+       "Row page-indicator dashes (top-right of each row)",
+       "'BETA' chip beside Games heading",
+       "TOP 10 corner badges on tiles",
+       "Bottom-centre status pills (New Season / New Episode / Recently Added / Watch Now)",
+       "Rendered Games row tiles"
+      ],
+      "missing_total": 7
+     },
+     "style": {
+      "score": 0.6,
+      "notes": "Same flat, dark streaming look with full-bleed artwork tiles. Reference tiles have clearly rounded corners (~8px); implementation tiles are square. Reference has no text overlay or gradient on tiles (the title is part of the artwork); implementation adds a bottom text caption with a shadow. The bordered empty-state boxes are foreign to the reference.",
+      "fix": "Give tiles border-radius ~8px with overflow hidden. Remove the caption overlay and its gradient. Remove the bordered empty-state panels."
+     },
+     "color": {
+      "score": 0.78,
+      "notes": "Dark #141414 base, Netflix red wordmark, white text: all match. Reference header is a solid near-black slightly darker than the page; implementation header is translucent over the hero. The red/white badge accents and the purple-outlined BETA chip are absent, so the implementation looks flatter. The active link's grey pill (#333-ish) is missing.",
+      "fix": "Solid #0f0f0f header. Add red (#E50914) TOP 10 and status pills with a white 'Watch Now' variant, the purple-outlined BETA chip, and a grey (#333) pill behind the active nav item."
+     },
+     "typography": {
+      "score": 0.65,
+      "notes": "Sans-serif throughout, with large left-aligned row headings and small nav links. Reference headings are medium weight (~26px, Netflix Sans-like geometric); implementation headings are heavier bold Arial/Helvetica. The active 'Home' is bold in both, but the reference sets it inside a pill. The nav text in the implementation is a little smaller.",
+      "fix": "Use a geometric sans (Netflix Sans / Inter fallback) at weight 500, ~26px, for row headings. Set nav links at ~17px regular, with 'Home' at weight 600 inside the pill."
+     },
+     "iconography": {
+      "score": 0.6,
+      "notes": "Search and bell outline icons match. Reference avatar is a blue rounded-square smiley with a small filled caret; implementation uses a generic person silhouette. The Kids rainbow icon is missing. Tile imagery has the same 16:9 cover crop, but the corners are square and there is no badge iconography (TOP 10 stacked lockup).",
+      "fix": "Use a rounded-square smiley profile avatar with a solid \u25bc caret. Add the Kids icon. Add rounded tile corners and the stacked 'TOP 10' red badge in the top-right of the tile."
+     },
+     "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages). Row headings 'TV Action & Adventure', 'Games', 'Only on Netflix' match. Missing: 'Kids', 'BETA', and the badge copy ('New Season', 'Recently Added', 'Watch Now', 'TOP 10'). Extra: 'Nothing to show here yet.', and 'Continue Watching for You' / 'Trending Now' rows sit where the reference starts with T",
+      "fix": "Add the 'Kids' label and 'BETA' chip text. Render the badge labels on tiles. Drop the empty-state copy."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Games row: implementation shows a 'Nothing to show here yet.' bordered box where the reference shows a full carousel of game tiles; the same happens for 'Continue Watching for You'",
+     "Tiles: reference tiles carry red bottom-centre status pills (New Season / New Episode / Recently Added) and white 'Watch Now' pills; implementation tiles have none",
+     "Tiles: reference shows red 'TOP 10' corner badges at top-right; implementation has none",
+     "Tiles: implementation overlays plain bold text titles bottom-left; reference has no caption overlay",
+     "Tile corners: reference ~8px rounded; implementation square",
+     "Row headers (right side): reference shows segmented page-indicator dashes aligned to the right edge of each row; implementation has none",
+     "Games heading: reference has a purple-outlined spaced 'BETA' chip; implementation has plain 'Games'",
+     "Header: reference wraps active 'Home' in a grey rounded pill; implementation only bolds it",
+     "Header right: reference has a 'Kids' icon + label before the avatar; implementation omits it, and its avatar is a generic person instead of a rounded-square smiley",
+     "Top of page: implementation shows the bottom of a hero (synopsis plus Play/More Info buttons) above the rows; the reference state is rows only, directly under a solid header"
+    ]
+   ]
+  },
+  "shows": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.74,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.82,
+      "notes": "Same skeleton: a transparent top nav over a full-bleed hero, a 'TV Shows' title with a Genres dropdown, a left-aligned hero block, then a 'Today's Top Picks' horizontal row. In the implementation the hero text block is indented about 106px, while the nav and title sit at about 64px; in the reference everything shares the 66px gutter. The row tiles are larger in the implementation (about 5 visible,",
+      "fix": "Align the hero content to the same 64px gutter as the nav. Shrink the row tiles so about 6 fit across, with ~8px gaps. Add a right-aligned mute button and maturity-rating tab at the vertical level of the hero buttons."
+     },
+     "components": {
+      "score": 0.62,
+      "notes": "Present: nav items (7), search, bell, profile avatar with caret, Genres dropdown, hero title art, synopsis, Play and More Info buttons, and the row heading with tiles. Missing: the Kids profile link with its icon, the 'TOP 10 #1 in TV Shows Today' badge line, the circular mute toggle, the TV-MA maturity tab flush to the right edge, TOP 10 corner badges on tiles, red 'New Season'/'Recently Added' b",
+      "fix": "Add a Kids link to the left of the avatar. Replace the metadata row with a TOP 10 badge and '#1 in TV Shows Today'. Add the mute circle and the TV-MA tab at the right of the hero. Add TOP 10 corner badges and red pill labels to the tiles. Put a rounded grey pill behind the active 'Shows' nav item.",
+      "missing": [
+       "Kids profile link",
+       "TOP 10 rank badge + '#1 in TV Shows Today' line",
+       "mute/volume toggle button",
+       "maturity rating tab (TV-MA) at right edge",
+       "TOP 10 corner badges on tiles",
+       "'New Season'/'Recently Added'/'New Episode' tile labels",
+       "row pagination indicator",
+       "active nav pill highlight"
+      ],
+      "missing_total": 8
+     },
+     "style": {
+      "score": 0.78,
+      "notes": "Both use flat Netflix cinematic styling: a full-bleed backdrop with a gradient fade, square-ish buttons, and minimal decoration. The implementation's Genres dropdown is a bordered dark box, which is close to the reference. The reference's active nav item is a rounded pill. The implementation's tiles have no badges, and their bottom title text adds a different texture.",
+      "fix": "Add the rounded pill behind the active nav item. Drop the text overlays on the tiles in favour of badge and label treatments."
+     },
+     "color": {
+      "score": 0.85,
+      "notes": "Both are dark with a #141414-style base, white text, a red wordmark, a white Play button and a grey translucent More Info button. The implementation adds a green 'Match' text accent that the reference lacks. The red label accents on the tiles are missing.",
+      "fix": "Remove the green match text. Use Netflix red (#E50914) for the tile labels and TOP 10 badges."
+     },
+     "typography": {
+      "score": 0.75,
+      "notes": "Both use sans-serif throughout with similar sizes for the nav, title and row heading. The reference's row heading is regular weight; the implementation's is bold. The reference's '#1 in TV Shows Today' line (~30px medium) is missing. The implementation's 'N TV Shows' letterspaced label replaces the reference's 'NETFLIX' red lettering above the title art. The reference's nav labels are slightly lig",
+      "fix": "Set the row heading to regular/medium weight. Add the ~30px '#1 in TV Shows Today' line. Use red NETFLIX lettering above the title art."
+     },
+     "iconography": {
+      "score": 0.75,
+      "notes": "The search, bell, play and info icons are line style and match. The profile avatar is a generic person icon, where the reference uses Netflix's smiley avatar (rounded square). The Kids icon, the mute icon and the TOP 10 badge graphics are missing. The tiles use cover-crop 16:9 imagery, which matches.",
+      "fix": "Use the rounded-square smiley profile avatar. Add the Kids icon, the speaker-muted circular icon and the red TOP 10 badge graphic."
+     },
+     "copy": {
+      "score": 0.82,
+      "notes": "The nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match. Missing: 'Kids', '#1 in TV Shows Today', 'TV-MA', and the tile labels ('New Season', 'Recently Added', 'New Episode', 'Watch Now'). The 'TV Shows' eyebrow label has been added.",
+      "fix": "Add 'Kids', the '#1 in TV Shows Today' line, the maturity rating tab and the tile label copy."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "hero right side: the reference has a circular mute button and a TV-MA maturity tab flush to the right edge; the implementation has neither",
+     "hero below the title art: the reference shows a red TOP 10 badge with '#1 in TV Shows Today'; the implementation shows a match %/year/rating/seasons/HD metadata row instead",
+     "row tiles: the reference has TOP 10 corner badges and red bottom labels ('New Season', 'Recently Added'); the implementation has plain tiles with white title text overlays",
+     "header right: the reference has a 'Kids' link with an icon before the avatar; the implementation has none",
+     "nav: the reference highlights active 'Shows' with a rounded grey pill; the implementation uses bold text only",
+     "hero text block: the implementation indents it ~40px more than the nav/title gutter; the reference aligns it to the same gutter",
+     "row tiles: the implementation's tiles are larger (5 visible vs ~6), with wider gaps",
+     "eyebrow above the title art: the implementation uses a small 'N TV Shows' label where the reference uses large red NETFLIX lettering"
+    ]
+   ]
+  },
+  "movies": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.74,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.8,
+      "notes": "Same skeleton: transparent top nav over a full-bleed hero, a 'Movies' title with a Genres dropdown, the hero text block on the left, then a 'Gems for You' row. Differences: the hero text block is indented about 106px while the header and rows use a 64px gutter (the reference lines everything up at about 67px). The row has 5 large tiles instead of about 6 smaller ones, and the tiles are taller (abo",
+      "fix": "Align the hero text block to the same 64\u201367px left gutter as the header and rows. Size the row tiles so about 6.3 fit across, at a 16:9 aspect. Add the mute button and rating flag on the right edge level with the CTAs."
+     },
+     "components": {
+      "score": 0.68,
+      "notes": "Present: nav items (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), search, bell, avatar with caret, Genres dropdown, Play and More Info buttons, and the row with its heading. Missing: the 'Kids' profile link and icon, the pill-shaped highlight on the active nav item, the TOP 10 badge with the '#3 in Movies Today' line, the mute button, the TV-14 maturity flag with left b",
+      "fix": "Add the Kids link, a pill background on the active nav item, the TOP 10 badge and rank line under the title, a right-edge mute button and maturity flag, tile badges, and row pagination dashes. Remove the metadata row and the tile caption text.",
+      "missing": [
+       "Kids profile link in header",
+       "active nav pill highlight",
+       "TOP 10 badge + '#N in Movies Today' rank line",
+       "mute/volume circular button",
+       "maturity rating flag (TV-14) on right edge",
+       "TOP 10 corner badges on tiles",
+       "'Recently Added' pill badges on tiles",
+       "row pagination indicator dashes"
+      ],
+      "missing_total": 8
+     },
+     "style": {
+      "score": 0.8,
+      "notes": "Same cinematic dark streaming look with flat, slightly rounded buttons and a bottom fade on the hero. The implementation adds a heavier dark gradient and caption gradients on the tiles. The Genres dropdown is a larger box with a chevron instead of a compact box with a solid triangle caret.",
+      "fix": "Make the Genres control compact with a black fill, white 1px border and solid \u25bc caret. Remove the caption gradients from the tiles."
+     },
+     "color": {
+      "score": 0.85,
+      "notes": "Dark scheme with Netflix red, a white Play button and a translucent grey More Info button all match. The green '87% Match' text adds an accent colour the reference lacks. The reference's red TOP 10 badges are missing.",
+      "fix": "Drop the green match text and use red for the TOP 10 badges."
+     },
+     "typography": {
+      "score": 0.72,
+      "notes": "Sans UI text with a condensed display title matches in spirit. Differences: the reference uses a small red NETFLIX wordmark above the title, while the implementation uses an N icon plus a spaced 'Movies' label. The reference synopsis is larger (about 22px against about 19px). The 'Movies' page heading is lighter and smaller than the reference's bold-ish 40px. The nav active state uses bold only.",
+      "fix": "Use a red NETFLIX wordmark as the eyebrow above the title, enlarge the synopsis to about 22px, enlarge the Movies heading to about 40px medium, and add the rank line at about 28px medium."
+     },
+     "iconography": {
+      "score": 0.68,
+      "notes": "The search, bell, play triangle and info-circle icons match. The avatar is a generic person silhouette instead of a coloured smiley tile. There is no Kids icon or mute icon. The tiles carry no title-art lockups or badges and use plain text captions instead.",
+      "fix": "Use a rounded-square coloured avatar, add a Kids icon and a mute icon, and replace the tile captions with logo/title-art overlays plus badges."
+     },
+     "copy": {
+      "score": 0.82,
+      "notes": "The nav labels, 'Movies', 'Genres', 'Play', 'More Info' and 'Gems for You' all match. Missing: 'Kids' and the '#N in Movies Today' copy. Added: the 'Movies' eyebrow and the match/duration copy.",
+      "fix": "Add 'Kids' to the header and '#3 in Movies Today' under the title, and remove the 'Movies' eyebrow label."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Hero left: the TOP 10 badge and '#N in Movies Today' rank line are missing; the implementation shows an invented metadata row (match %, year, rating, duration, HD) in its place",
+     "Hero right edge: the circular mute button and the TV-14 maturity flag with left bar are missing",
+     "Header right: the 'Kids' link with icon is missing, and the avatar is a generic silhouette rather than a coloured smiley tile",
+     "Header nav: the active 'Movies' item has no pill background highlight",
+     "Hero text block is indented about 106px while the rest of the page uses 64px; the reference keeps one gutter",
+     "Hero eyebrow: an N icon plus 'Movies' label instead of a red NETFLIX wordmark",
+     "Gems for You row: no TOP 10 corner badges or 'Recently Added' pills; it adds plain text title captions; there are 5 larger tiles instead of about 6.3 smaller ones; the pagination dashes are missing",
+     "Genres dropdown is a larger box with a chevron; the reference uses a compact box with a solid caret"
+    ]
+   ]
+  },
+  "games": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.42,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.5,
+      "notes": "The top nav, the full-bleed hero and the 'Party Games' row heading come in the same order. However, the implementation's hero is much shorter (about 570px against about 790px) and puts its title block high up (y\u2248180\u2013470) instead of near the bottom (y\u2248510\u2013780). The hero is also heavily darkened. The row is a single bordered empty-state box, not a horizontal carousel of tiles that bleeds off the rig",
+      "fix": "Make the hero about 72% of the viewport tall. Anchor the title, metadata and buttons to its bottom-left at the same ~53px gutter as the row title. Render 'Party Games' as a horizontal carousel of 16:9 tiles that peeks off the right edge."
+     },
+     "components": {
+      "score": 0.3,
+      "notes": "The nav items match: there are 7, with Games active. The search, bell and avatar with caret are present. Missing are the Kids profile link, the pill highlight on the active nav item, the metadata row with dot separators, the white Play button, the translucent More Info button with an info icon, the mute toggle, the maturity/'ALL' rating tab, the row page indicator and the game tiles. Added element",
+      "missing": [
+       "Kids profile link with kids icon in header",
+       "pill background on active 'Games' nav item",
+       "hero metadata row (Game \u2022 Genre \u2022 Players \u2022 Duration)",
+       "white 'Play Game' primary button",
+       "grey translucent 'More Info' button with info icon",
+       "mute/volume circular toggle",
+       "'ALL' rating tab with left border at the hero's right edge",
+       "row page-indicator dashes",
+       "horizontal row of game artwork tiles"
+      ],
+      "missing_total": 9
+     },
+     "style": {
+      "score": 0.5,
+      "notes": "Both use the dark Netflix cinematic style. The reference hero is bright and vivid, with only a bottom fade. The implementation uses a heavy dark overlay across the whole hero. The reference tiles are rounded artwork cards with small gaps. The implementation has a flat bordered panel instead. Its buttons are flat grey, not white and translucent.",
+      "fix": "Lighten the hero overlay to a left and bottom gradient only. Use rounded (~4px) image tiles with ~8px gaps. Style the primary button solid white and the secondary button rgba grey."
+     },
+     "color": {
+      "score": 0.6,
+      "notes": "The dark #141414 base, the red wordmark and the white text match. The reference hero is colourful and well lit, while the implementation's is muted and almost black-red. The primary CTA should be white with black text, not dark grey. The active nav pill (a grey translucent fill) is absent.",
+      "fix": "Make 'Play' white with black text and 'More Info' rgba(109,109,110,0.7) with white text. Add a translucent grey pill behind the active nav item. Reduce the darkening on the hero."
+     },
+     "typography": {
+      "score": 0.5,
+      "notes": "The nav and the row title use a matching sans-serif style and weight. The reference uses a title-art logo lockup with a small red NETFLIX tag above it. The implementation shows a giant condensed 'Games' text heading and a small all-caps eyebrow. A paragraph sits where the reference has a metadata row in ~17px medium text. The nav text is about 15px, slightly smaller than the reference's ~17px.",
+      "fix": "Replace the 'Games' display heading with a title-art image lockup (~200px wide) and a small red NETFLIX tag. Below it, add a metadata row at ~17px with bullet separators. Raise the nav font size to ~17px."
+     },
+     "iconography": {
+      "score": 0.5,
+      "notes": "The search, bell and caret are line icons, which matches. The avatar is a generic person icon on a blue tile, not a smiley tile, which is acceptable. The kids icon, the info-circle in the More Info button, the mute speaker icon and all artwork tiles are missing. A large info-circle empty-state icon was invented.",
+      "fix": "Add an outline info icon to More Info and a circular outlined mute button. Render game tiles as cover-cropped 16:9 artwork with rounded corners. Remove the empty-state icon."
+     },
+     "copy": {
+      "score": 0.5,
+      "notes": "The nav labels and the 'Party Games' heading match. The CTAs should read 'Play Game' and 'More Info', but the implementation has 'Browse Titles' and 'Explore Movies'. It adds explanatory copy the reference lacks ('Games are included\u2026', 'No games in this catalog', 'Nothing has been fabricated\u2026'). The 'Kids' and 'ALL' labels are missing.",
+      "fix": "Use 'Play Game' and 'More Info' as the CTAs. Remove the description and empty-state text. Add 'Kids' to the header and 'ALL' to the rating tab."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Party Games row: the implementation shows a bordered 'No games in this catalog' empty-state panel. The reference has a horizontal carousel of rounded 16:9 game artwork tiles that bleeds off the right edge.",
+     "Hero content: the implementation has a giant text 'Games' heading, a description paragraph and a single grey 'Browse Titles' button. The reference has a title-art lockup, a metadata row with dot separators, a white 'Play Game' button and a grey 'More Info' button with an info icon.",
+     "Hero layout: the implementation's hero is shorter (about 570px against about 790px), its content sits in the upper third, and it is heavily darkened. The reference anchors content near the bottom-left over bright artwork.",
+     "Hero right edge: the mute toggle and the 'ALL' rating tab from the reference are missing in the implementation.",
+     "Header: the reference has a 'Kids' link with a kids icon and a grey pill behind the active 'Games' item. The implementation has neither.",
+     "Row header: the reference shows page-indicator dashes at the right of 'Party Games'. They are missing in the implementation.",
+     "Hero left gutter: the implementation insets content at about 96px, while the row title sits at 64px. The reference aligns both at about 53px."
+    ]
+   ]
+  },
+  "new_and_popular": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.7,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.72,
+      "notes": "The structure matches: a top nav bar, then the rows New on Netflix, Top 10 TV, Top 10 Movies and Coming This Week, in the same order, as horizontal carousels that bleed off the right edge. There are several differences. The implementation adds an extra 'New & Popular' page heading above the first row. Its New on Netflix tiles are wider (about 5 visible vs about 6.3 in the reference) and taller. Th",
+      "fix": "Remove the 'New & Popular' h1. Size the New on Netflix tiles at ~16:9, about 290px wide with a 8px gap, so ~6.3 are visible. Make the Top 10 posters ~145\u00d7207px and tuck them over the right part of the large number. Add ~70px of vertical spacing between rows."
+     },
+     "components": {
+      "score": 0.6,
+      "notes": "Present: the nav with all 7 items, search, bell, profile avatar with caret, row headings, and ranked Top 10 numerals. Missing: the TOP 10 corner badges on tiles, the red 'New Season'/'New Episode'/'Recently Added' tag pills at the bottom-centre of tiles, the 'Watch Now' white pill, the Kids profile-switch link, the pill-shaped highlight on the active nav item, and the page-indicator dashes at the ",
+      "fix": "Add a red TOP 10 badge at the top-right of each tile. Add red pill tags ('New Season', 'Recently Added', 'New Episode') at the bottom-centre of tiles. Add the 'Kids' link with its icon before the avatar. Add a pill background behind the active nav item. Add segmented page indicators at the top-right of each row. Hide the side arrows until hover.",
+      "missing": [
+       "TOP 10 corner badge on tiles",
+       "red status tag pills (New Season / Recently Added / New Episode)",
+       "Watch Now pill",
+       "Kids profile link",
+       "pill highlight on active nav item",
+       "row page-indicator dashes"
+      ],
+      "missing_total": 6
+     },
+     "style": {
+      "score": 0.72,
+      "notes": "Both use the same flat, dark, dense carousel aesthetic with slightly rounded tiles. The implementation's numerals are filled in gray with a light outline; the reference uses black numerals with a thin gray outline that blend into the background. The implementation also shows a dark gradient caption scrim on tiles that the reference doesn't have.",
+      "fix": "Render the rank numerals with a black fill (#141414) and a ~3px #595959 stroke. Remove the caption scrim and the text title from the New on Netflix tiles."
+     },
+     "color": {
+      "score": 0.82,
+      "notes": "The dark #141414 base, white text and red wordmark all match. The red accent tags are missing, so the screen has less of the brand red. The active nav item has no gray pill (#333).",
+      "fix": "Use Netflix red (#E50914) on the tag pills and badges. Give the active nav item a #333 rounded-pill background."
+     },
+     "typography": {
+      "score": 0.7,
+      "notes": "Both use a sans-serif. Row headings in the implementation are bold; the reference uses regular/medium weight at about 28px. Nav text in the implementation is smaller (about 15px vs about 18px). The extra page title adds a hierarchy level that isn't in the reference.",
+      "fix": "Set row headings to weight 400\u2013500 at ~28px. Set nav items to ~18px regular, with the active item at semibold. Drop the page h1."
+     },
+     "iconography": {
+      "score": 0.7,
+      "notes": "The search, bell and avatar icons are a reasonable match, but the reference avatar is a blue smiley rounded square. Tile aspect ratios differ: the New on Netflix tiles are larger, and the Top 10 posters are taller than the reference's ~2:3 at a smaller size. The numeral style differs as described under style.",
+      "fix": "Use 16:9 landscape tiles for New on Netflix and ~0.7 aspect posters for Top 10. Restyle the numerals to black with a gray outline."
+     },
+     "copy": {
+      "score": 0.85,
+      "notes": "The nav labels and row headings match exactly. The implementation adds a 'New & Popular' heading the reference doesn't have, and it's missing the 'Kids' label and the tag copy ('New Season', 'Recently Added').",
+      "fix": "Remove the page heading. Add the 'Kids' label and the tag labels."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Tiles across all rows have no red status tag pills ('New Season', 'Recently Added', 'New Episode'). These are prominent on almost every tile in the reference.",
+     "Top-right corner of tiles has no red TOP 10 badge.",
+     "Top 10 rows: the numerals are gray-filled with light outlines and sit beside the posters. The reference uses black outlined numerals partly overlapped by smaller posters.",
+     "An extra 'New & Popular' page title above the first row.",
+     "New on Netflix row: tiles are larger (~5 visible vs ~6.3) and use plain-text title captions with a scrim instead of artwork lockups.",
+     "Header: no 'Kids' link, and the active nav item has no gray pill highlight.",
+     "Vertical spacing between rows is too tight (the Movies heading almost touches the TV row), and the Top 10 rows are too tall.",
+     "Row page-indicator dashes at the top right are missing. Side chevron arrows are added and always visible.",
+     "Row headings are bold; the reference uses regular weight."
+    ]
+   ]
+  },
+  "genre_category": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.72,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.75,
+      "notes": "Same skeleton overall: a transparent top nav over a full-bleed hero, a breadcrumb plus genre title, the hero title/synopsis/CTAs on the left, then a row heading and a horizontal row of thumbnails partly overlapping the bottom of the hero. Differences: the reference puts the breadcrumb and title on one line ('TV Shows > Sports TV Shows'), but the implementation stacks a small 'Movies' label above a",
+      "fix": "Put the breadcrumb and genre title on one line ('Movies > Action'), align the hero title, synopsis and buttons to the same ~64px gutter as the nav logo, and add the right-edge mute circle plus rating tab at the bottom of the hero."
+     },
+     "components": {
+      "score": 0.68,
+      "notes": "Present: the nav with 7 items, search, bell, avatar with caret, Play/More Info buttons and the thumbnail row. Missing: the active-tab pill on the nav, the Kids profile entry, the mute/replay circle button, the TV-14 rating tab on the right, the hero's small caption badge, card badges (TOP 10 corner flags, red 'Recently Added'/'New Season'/'Live Now' pills) and the row page indicator dashes. Added ",
+      "missing": [
+       "active nav tab pill highlight",
+       "Kids profile link in header",
+       "mute/replay circular button on hero right",
+       "maturity rating tab (TV-14) on hero right edge",
+       "TOP 10 corner badges on thumbnails",
+       "red status pills on thumbnails (Recently Added / New Season / Live Now)",
+       "row page-indicator dashes",
+       "breadcrumb chevron separator"
+      ],
+      "missing_total": 8
+     },
+     "style": {
+      "score": 0.78,
+      "notes": "Both use the same cinematic dark Netflix style: full-bleed imagery with a left/bottom vignette, flat slightly rounded buttons and edge-to-edge thumbnails with small gaps. Two differences: the implementation's cards carry a gradient with a text caption where the reference has clean artwork, and its hero type is much heavier and more condensed.",
+      "fix": "Remove the gradient text captions from the cards (or show them only on hover), and add the small red rounded status pills along the bottom centre of the cards."
+     },
+     "color": {
+      "score": 0.85,
+      "notes": "Both are dark with white text, a red wordmark, a white Play button and a translucent grey More Info button. The implementation adds a green Match colour the reference doesn't show. The reference's breadcrumb parent is grey, like the implementation's small label.",
+      "fix": "Drop the green match metadata, use a semi-opaque grey pill for the active nav item, and add red badge pills on the cards."
+     },
+     "typography": {
+      "score": 0.6,
+      "notes": "The reference's genre title is a regular-weight sans at ~40px, inline with a grey breadcrumb. The implementation's title is a heavy condensed display face, giving it a different character. Nav sizes are similar, though the reference's are slightly larger. The reference's synopsis is ~22px regular, which the implementation matches closely. Row heading weights match.",
+      "fix": "Render the genre title in the regular-weight UI sans at ~40px, on one line with a grey ~20px breadcrumb parent and a '>' separator. Bump the nav labels to ~17px."
+     },
+     "iconography": {
+      "score": 0.75,
+      "notes": "Line icons for search and bell match, as do the play triangle and info-circle icons. The avatar is a generic silhouette rather than a rounded-square smiley tile, which is acceptable. Thumbnails are 16:9-ish in both, though the implementation's are a bit taller. Missing the Kids icon and the mute icon.",
+      "fix": "Add the Kids icon tile next to the avatar, add the circular outlined mute icon on the hero, and crop the thumbnails to ~16:9 (around 290\u00d7165)."
+     },
+     "copy": {
+      "score": 0.85,
+      "notes": "The nav labels match exactly, as do 'Play' and 'More Info'. The row heading pattern differs in wording only. The extra 'Action' label above the hero title is added copy. The 'Kids' label is missing.",
+      "fix": "Add the 'Kids' header label, and write the breadcrumb as 'Movies > Action'."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Hero right edge: the reference has a circular mute/replay button and a TV-14 rating tab flush against the right edge; the implementation has neither",
+     "Thumbnail row: the reference shows TOP 10 corner badges and red status pills (Recently Added / New Season / Live Now); the implementation has none and instead overlays gradient title captions",
+     "Header: the reference highlights the active nav item ('Shows') with a grey rounded pill; the implementation has no active-state indicator",
+     "Header right: the reference has a Kids icon with a 'Kids' label before the profile avatar; the implementation omits it",
+     "Title area: the reference shows an inline grey breadcrumb with a '>' separator next to a regular-weight sans title; the implementation stacks a tiny label over a heavy condensed display title",
+     "Hero content: the implementation adds an 'N + Action' label and a metadata row (Match %, year, rating, runtime, HD) that the reference lacks, and indents the block ~40px past the page gutter",
+     "Row: the reference has page-indicator dashes at the top-right of the row; the implementation has none"
+    ]
+   ]
+  },
+  "browse_by_languages": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.55,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.55,
+      "notes": "Both have the same top nav, a left-aligned 'Browse by Languages' title with preferences on the right, and a full-width title grid. The differences: the reference puts the label 'Select Your Preferences' and two dropdowns side by side on the same line as the title. The implementation stacks a heading over a 3-row table of Original Language, Dubbing and Subtitles. The reference grid has 6 columns of",
+      "fix": "Remove the hero backdrop band and the meta row. Put 'Select Your Preferences' and two dropdowns (about 240px and 265px wide) in one row, right-aligned and vertically centered with the page title. Change the grid to 6 columns of 16:9 landscape tiles with about 8px horizontal gaps and about 80px gaps between rows."
+     },
+     "components": {
+      "score": 0.5,
+      "notes": "The nav items, search, bell and avatar with caret are all present. The preferences control is a different component: a table with 'Not available' rows plus a native select, where the reference uses two custom dropdown selects. The tiles have no badges, and nothing like the expanded hover preview card exists. The implementation adds a hero image, a title count and a filter label that the reference ",
+      "fix": "Replace the preferences table with two custom dark dropdowns: a mode select and a language select, each with a white border and a caret, opening a dark list menu. Add a pill highlight to the active nav item, add a Kids link before the avatar, add corner and bottom badges to tiles, and build an expanded hover card with the action button row and metadata row.",
+      "missing": [
+       "Pill highlight on the active 'Browse by Languages' nav item",
+       "Kids profile link (icon + 'Kids' label) in the header",
+       "Mode dropdown (Original Language / Dubbing / Subtitles) as a single bordered select",
+       "Language list dropdown (Arabic\u2026Vietnamese) as a custom dark menu",
+       "Overlay badges on tiles: 'TOP 10', 'Recently Added', 'New Season', 'Live Now'",
+       "Hover preview card: video still, title logo, mute button, play / add / like / expand circle buttons, maturity rating, du"
+      ],
+      "missing_total": 6
+     },
+     "style": {
+      "score": 0.6,
+      "notes": "Both use a flat, dark Netflix look with square-cornered tiles. The reference preferences use thin white-bordered selects. The implementation uses a table with hairline dividers and a native browser select. The reference's active nav item is a rounded gray pill, which the implementation lacks. The implementation's hero backdrop adds decoration that the reference doesn't have.",
+      "fix": "Use 1px white-bordered select boxes with square corners and dark fills, style the active nav item as a pill with a #333 background, drop the hero image, and give the hover card an elevated #181818 surface with rounded corners."
+     },
+     "color": {
+      "score": 0.75,
+      "notes": "Both use a near-black (#141414) base, a red wordmark and white/gray text. The reference uses red badges (#E50914) on tiles, while the implementation has no accent color on tiles. The hero image adds warm tones that aren't in the reference. The native select renders slightly differently.",
+      "fix": "Add red badge fills to the tiles, keep the page background a solid #141414 with no hero, and make the dropdown menus #000 or #141414 with white text."
+     },
+     "typography": {
+      "score": 0.7,
+      "notes": "The sans-serif title is a similar size and weight. Nav text matches, though the active item is bold in the implementation and sits in a pill in the reference. Text inside the reference dropdowns is larger (about 18px) than the implementation's tiny native select text. The implementation adds small gray meta captions.",
+      "fix": "Set the dropdown values at about 18px regular white and the menu items at about 16px. Make the 'Select Your Preferences' label about 15px, inline with the dropdowns. Remove the meta captions."
+     },
+     "iconography": {
+      "score": 0.55,
+      "notes": "The search, bell and avatar icons match in outline style. The reference avatar is a blue smiley; the implementation uses a generic silhouette. The Kids icon is missing. The reference tiles are landscape 16:9 artwork with title treatments and badges. The implementation uses portrait 2:3 posters, which is a major crop/aspect deviation. The circular outline action icons on the hover card are absent.",
+      "fix": "Switch tile artwork to 16:9 landscape backdrops with title logos, use a blue square smiley-style avatar, add a Kids icon, and add circular outline buttons on the hover card."
+     },
+     "copy": {
+      "score": 0.7,
+      "notes": "The nav labels, page title and 'Select Your Preferences' match. The implementation shows the default 'All Languages' where the reference shows 'English', and it shows 'Not available' rows and '60 titles' / 'All original languages', none of which appear in the reference. 'Kids' is missing.",
+      "fix": "Default the language select to a concrete language such as 'English'. Show 'Original Language' / 'Dubbing' / 'Subtitles' only as options in the mode dropdown. Remove the 'Not available' and count/filter captions. Add the 'Kids' label."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Title grid: the implementation uses 9 columns of portrait 2:3 posters; the reference uses 6 columns of landscape 16:9 tiles with wide row spacing.",
+     "Preferences area (top right): the implementation shows a 3-row table with a native select and 'Not available' text; the reference shows two inline bordered dropdowns (mode + language) with dark open menus.",
+     "Header band: the implementation adds a hero backdrop image behind the title; the reference has a plain dark background.",
+     "Tiles: the reference shows 'TOP 10' corner badges and red 'Recently Added' / 'New Season' / 'Live Now' bottom badges; the implementation has none.",
+     "Hover preview card: the reference shows an expanded card with play / add / like / expand buttons, a TV-MA / duration / HD row and genre tags; the implementation has no equivalent.",
+     "Nav: the reference highlights the active 'Browse by Languages' item with a gray pill; the implementation only bolds it.",
+     "Header right: the reference has a Kids link with an icon; the implementation omits it.",
+     "Below the header: the implementation adds a '60 titles' / 'All original languages' meta row that the reference doesn't have."
+    ]
+   ]
+  },
+  "my_list": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.55,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.65,
+      "notes": "Both have the same top nav: logo on the left, 7 links, and utility icons on the right. Both have a left-aligned 'My List' heading over a left-aligned row of tiles on a dark page. The reference uses landscape 16:9 tiles about 295px wide with an ~8px gap, starting near y=300. It also shows an expanded hover card (about 440px wide) open over the row. The implementation uses portrait tiles about 167x2",
+      "fix": "Make the tiles landscape 16:9, about 295x165, with an 8px gap. Line the heading and row up with the logo at a ~67px gutter. Remove the subtitle and the per-tile Remove bars. Add the hover-expand card that scales up over the row."
+     },
+     "components": {
+      "score": 0.45,
+      "notes": "The nav inventory matches: 7 links, search, bell, profile avatar and caret. Missing: the 'Kids' profile link with its icon, the pill highlight on the active 'My List' link, and the hover preview card. That card has a play button, a rating group (thumbs down / thumbs up / double thumbs up) with an 'I like this' tooltip, a mute toggle, a circular chevron 'more info' button, a maturity badge with dur",
+      "fix": "Build a hover card: a 16:9 preview with the title logo and a mute button, then a row with a white circular play button, a dark pill holding three rating icons with a tooltip, and an outlined circular chevron on the right. Under that, add a metadata row (outlined rating box, duration, HD badge) and a genre row with dots. Add the Kids link and the pill-shaped active nav state. Drop the Remove bars a",
+      "missing": [
+       "Kids profile link with icon in header",
+       "pill-shaped active state on 'My List' nav item",
+       "hover/expanded preview card",
+       "circular play button",
+       "rating pill (thumbs down / thumbs up / love) with tooltip",
+       "mute toggle on preview",
+       "circular chevron 'more info' button",
+       "maturity rating badge + duration + HD badge row",
+       "genre tags row with dot separators",
+       "'New Season' red badge on tile",
+       "Netflix 'N' badge on artwork"
+      ],
+      "missing_total": 11
+     },
+     "style": {
+      "score": 0.6,
+      "notes": "Both are flat and dark with minimal decoration. The reference tiles have slightly rounded corners (~4px), and its hover card is rounded with a raised dark-grey surface and a shadow. The implementation uses square tiles with boxy bordered Remove bars, which reads as more utilitarian. The active nav item in the reference is a filled grey pill.",
+      "fix": "Round the tile corners to ~4px. Add the raised #181818 hover card with ~6px radius and a soft shadow. Remove the bordered Remove boxes. Give the active nav link a rounded grey pill background (~#333)."
+     },
+     "color": {
+      "score": 0.8,
+      "notes": "Both use a #141414 base, white text, and the red Netflix brand colour, so the palette matches. The implementation is missing the grey active-nav pill, the #181818 card surface, and the red 'New Season' accent. Its nav links are a dimmer grey, with the active link shown only as bold white.",
+      "fix": "Add the ~#333 active-nav pill, the #181818 hover-card surface, and red badge accents on tiles."
+     },
+     "typography": {
+      "score": 0.55,
+      "notes": "The reference uses Netflix Sans: the 'My List' heading is regular weight at ~34px, and the nav is ~17px regular. The implementation's heading is a heavy bold at ~50px, and the nav and body text fall back to Arial/Helvetica. It also adds a small grey subtitle.",
+      "fix": "Set the heading to ~34px regular (weight 400\u2013500) in Netflix Sans or a close geometric sans like Inter or Helvetica Neue. Set the nav to ~17px, and remove the subtitle."
+     },
+     "iconography": {
+      "score": 0.6,
+      "notes": "The search and bell icons are similar outline icons. The reference avatar is a blue rounded square with a smiley face, and there's a Kids icon beside it. The implementation shows a generic person silhouette. The reference artwork is landscape with the title logo overlaid; the implementation uses portrait posters. The reference also has outline thumb icons and circular outlined buttons, which the i",
+      "fix": "Switch to landscape backdrop art with the title logo at the bottom left. Use a rounded-square avatar with the smiley and add the Kids icon. Use outline thumb, chevron and mute icons inside circular buttons on the hover card."
+     },
+     "copy": {
+      "score": 0.75,
+      "notes": "The nav labels and the 'My List' heading match exactly. The implementation adds copy the reference doesn't have: 'Saved to your profile, 4 titles.' and 'Remove'. It's missing 'Kids', 'I like this' and 'New Season'.",
+      "fix": "Remove the subtitle and the 'Remove' labels. Add 'Kids' in the header and the 'I like this' / 'Not for me' / 'Love this!' rating tooltips."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Center of screen: the reference shows an expanded hover preview card (play button, rating pill with tooltip, chevron, mute, metadata and genre rows), and the implementation has nothing comparable",
+     "Tile row: the reference uses landscape 16:9 backdrop tiles with title-logo overlays; the implementation uses portrait 2:3 posters",
+     "Under each tile: the implementation adds bordered 'Remove' bars that the reference doesn't have",
+     "Header right: the reference has a 'Kids' icon and label before the avatar; the implementation leaves it out",
+     "Header nav: the reference shows active 'My List' as a filled grey pill; the implementation just bolds the text",
+     "Heading: the implementation's 'My List' is heavy bold at ~50px; the reference is regular weight at ~34px",
+     "Below heading: the implementation adds a 'Saved to your profile, 4 titles.' subtitle the reference doesn't have",
+     "Tiles: the reference has the red 'New Season' badge and N brand badge; the implementation has neither",
+     "Avatar: the implementation shows a generic person silhouette instead of the blue rounded-square smiley avatar"
+    ]
+   ]
+  },
+  "title_detail": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.8,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.85,
+      "notes": "Same structure: a centred modal over a dimmed browse page, with a hero image, a two-column info area below it (synopsis on the left, cast/genres on the right), then an Episodes section with a season dropdown on the right and a list of episode rows. The implementation's modal is a bit narrower (~960px vs ~1085px), and the hero is taller relative to the info area. The browse page behind it uses the ",
+      "fix": "Widen the modal to ~1085px (about 56% of the viewport), placed ~36px from the top. Shorten the hero so the info row starts at ~58% of its height."
+     },
+     "components": {
+      "score": 0.75,
+      "notes": "Present: close button, Play button, round icon buttons, metadata row, synopsis, side metadata column, Episodes heading, season dropdown, episode rows with number, thumbnail, title, duration and synopsis. Differences: (1) The reference has a mute/volume button at the bottom-right of the hero; the implementation doesn't. (2) The implementation adds a thumbs-down button, so it shows 3 round buttons w",
+      "missing": [
+       "mute/volume toggle at the bottom-right of the hero",
+       "season rating line under the Episodes heading ('Season 1: [TV-14] warnings')",
+       "content-warning line next to the TV-14 box under the metadata",
+       "subtitles/CC icon in the metadata row",
+       "filled card background on the episode row"
+      ],
+      "missing_total": 5
+     },
+     "style": {
+      "score": 0.8,
+      "notes": "Same dark, flat Netflix modal language: a gradient from the hero into the dark body, a white rectangular Play button, outlined circular icon buttons and a hairline-bordered dropdown. Differences: the implementation fills the 'added' checkmark button white, puts a horizontal divider above Episodes, and separates episode rows with dividers instead of the reference's rounded filled card.",
+      "fix": "Show the + button as an outline ring like the others. Remove the divider above Episodes. Put each episode row on a #2f2f2f card with ~4px radius instead of using divider lines."
+     },
+     "color": {
+      "score": 0.85,
+      "notes": "Same dark palette: ~#181818 modal on a dimmed backdrop, white primary button, grey labels (Cast:/Genres:) with white values. The implementation adds a green '86% Match' accent the reference doesn't use, and its episode list has no lighter grey card surface.",
+      "fix": "Remove the green match text. Use a lighter grey surface (#2f2f2f) for the active episode row."
+     },
+     "typography": {
+      "score": 0.8,
+      "notes": "Sans-serif hierarchy matches: large condensed title lockup on the hero, ~17px metadata, ~17px synopsis, bold 'Episodes' heading, smaller grey labels in the side column. The implementation's episode titles and synopses are smaller (~14/12px vs ~17/15px). Its episode numbers are zero-padded ('01' vs '1'). The 'SERIES' eyebrow in small caps doesn't exist in the reference.",
+      "fix": "Show episode numbers as plain integers (~24px). Set episode titles to ~17px and synopses to ~15px across the full row width, with the duration aligned right. Remove the 'SERIES' eyebrow."
+     },
+     "iconography": {
+      "score": 0.75,
+      "notes": "Close X in a dark circle matches, and so do the outlined circle buttons. The reference uses a + (add) button and one thumbs-up; the implementation shows a filled check, a thumbs-up and a thumbs-down. The mute icon is missing from the hero, and the subtitle icon is missing from the metadata. Episode thumbnails are 16:9 with small radii in both.",
+      "fix": "Show two outline circle buttons after Play: + and thumbs-up. Add an outlined circle mute button at the bottom-right of the hero, and a subtitle icon after the HD badge."
+     },
+     "copy": {
+      "score": 0.8,
+      "notes": "'Play', 'Episodes', 'Season 1', 'Genres:', 'Cast:' all match. 'This title is:' differs from the reference's 'This Show Is:'. 'X% Match' and 'SERIES' are invented copy. The reference orders the side column Cast, Genres, This Show Is; the implementation puts Genres first.",
+      "fix": "Rename to 'This Show Is:' and order the side column Cast, Genres, This Show Is. Remove 'SERIES' and the match percentage."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "hero bottom-right: the reference has an outlined circular mute/volume button; the implementation has none",
+     "hero action row: the reference shows Play + 2 outline circles (add, thumbs-up); the implementation shows a filled white check plus thumbs-up and thumbs-down (an extra button)",
+     "episodes section: the reference shows a 'Season 1: [TV-14] substances, language' line under the Episodes heading; the implementation omits it",
+     "episode rows: the reference shows the row as a rounded, lighter-grey filled card with larger text spanning the width; the implementation uses divider-separated rows with small text crammed to the left",
+     "info area: the reference has a second line with a TV-14 box plus content warnings and a subtitle icon; the implementation puts the rating inline and adds a green '86% Match' label",
+     "hero lockup: the implementation adds a 'SERIES' eyebrow above the title that the reference doesn't have",
+     "side column: the order differs (Genres first vs Cast first), and 'This title is:' differs from 'This Show Is:'",
+     "modal: the implementation is narrower, with a taller hero; a divider line above Episodes isn't in the reference"
+    ]
+   ]
+  },
+  "title_episodes": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.72,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.75,
+      "notes": "Both show the same structure: a centered dark modal over a dimmed home page, the synopsis block at the top, an 'Episodes' header with a control on the right, and a vertical list of rows (number, thumbnail, title, duration, synopsis) separated by hairlines. Differences: the reference modal is wider (~1085px against ~960px). In the reference, the duration is right-aligned near the row's right edge (",
+      "fix": "Widen the modal to ~1085px. Make each episode row a flex layout: number column ~80px, thumbnail ~170px, then a text column that fills the remaining width, with the title on the left and the duration right-aligned at the end of the text column. Set row height to ~146px with ~24px vertical padding. Remove the divider above the Episodes header."
+     },
+     "components": {
+      "score": 0.72,
+      "notes": "The implementation has the Episodes heading, episode rows, play-overlay on hover, a highlighted row state and row dividers. The season control differs: the reference shows plain right-aligned text with no box, while the implementation uses a bordered native <select> dropdown. Episode synopses show the placeholder 'Episode synopsis is not available.' where the reference has two-line descriptions. E",
+      "fix": "Replace the bordered <select> with an unboxed, right-aligned ~20px white text label (a borderless, background-less dropdown trigger if it has to stay interactive). Fill synopses with real 1\u20132 line descriptions, and give each episode its own still image.",
+      "missing": [
+       "plain-text season/title label at the right of the Episodes header (replaced by a boxed select)",
+       "multi-line episode synopsis text",
+       "distinct per-episode still thumbnails"
+      ],
+      "missing_total": 3
+     },
+     "style": {
+      "score": 0.75,
+      "notes": "Both use a flat dark modal, hairline row dividers and a lighter rounded background on the active row. The reference is airier, with larger thumbnails and more padding per row. The implementation's active-row highlight is subtler, and its boxed select adds a bordered element the reference doesn't have.",
+      "fix": "Raise row padding to ~24px, and give the active row a #333-ish background with ~4px radius that spans the full list width. Remove the select border."
+     },
+     "color": {
+      "score": 0.88,
+      "notes": "Both use a dark #181818-style modal over a dimmed page, white titles, light-gray synopsis text and dark-gray dividers. The highlighted-row tone is close. No significant hue differences.",
+      "fix": "Lighten the active-row background slightly (~#333), and make synopsis text ~#d2d2d2 so it matches the reference's brightness."
+     },
+     "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. Implementation sizes are noticeably smaller: episode titles ~14px against ~17px bold, synopses ~12px against ~15px, durations ~12px against ~17px. The reference shows episode numbers as unpadded '1', '2' at ~26px. The implementation uses zero-padded '01', '02' at ~20px.",
+      "fix": "Episode title: 17px bold. Duration: 17px regular, right-aligned. Synopsis: 15px with ~1.45 line-height. Episode number: unpadded, ~26px regular, light gray."
+     },
+     "iconography": {
+      "score": 0.7,
+      "notes": "The play overlay on the hovered thumbnail exists in both. In the reference it is a circular outlined button (white ring on a translucent dark disc). In the implementation it is a bare white triangle. Thumbnails are ~148x83 in the implementation against ~170x96 in the reference. Both are 16:9 cover crops with slight rounding.",
+      "fix": "Render the hover play icon as a ~54px circle with a white 2px ring, a translucent black fill and a centered white triangle. Enlarge thumbnails to ~170x96."
+     },
+     "copy": {
+      "score": 0.7,
+      "notes": "The 'Episodes' heading matches. The right-side header control reads 'Season 1' in a dropdown style; the reference shows a plain label there. Episode titles follow a generic 'Episode N' pattern, and synopses fall back to 'Episode synopsis is not available.' placeholder copy.",
+      "fix": "Show real episode titles and synopses, and render the season/series label as plain text rather than as a form control."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Episode rows: the implementation puts the duration right after the title (~x=900) and leaves the right half of each row empty. The reference right-aligns the duration near the row's right edge, and its synopsis runs across the full text column.",
+     "Episode rows: the implementation shows the placeholder 'Episode synopsis is not available.' where the reference shows two-line descriptions.",
+     "Episodes header, right side: the implementation uses a bordered native select box ('Season 1'); the reference shows unboxed plain white text.",
+     "Typography in rows: implementation titles, durations and synopses are ~20\u201330% smaller than the reference's.",
+     "Episode numbers: the implementation zero-pads them ('01') at a smaller size; the reference uses large unpadded numerals ('1').",
+     "Thumbnails: smaller in the implementation (~148px wide against ~170px), and they all repeat the same series key art.",
+     "Hover play icon: a bare triangle in the implementation; the reference uses a circled play button.",
+     "Modal: narrower in the implementation (~960px against ~1085px), and it adds a full-width divider above the Episodes heading."
+    ]
+   ]
+  },
+  "rate_dialog": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.4,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.35,
+      "notes": "In the reference, the rate dialog spans the full width of the detail modal (about 960px). It has no card of its own and sits over a heavily darkened, blurred backdrop, with a red rule on top and a hairline at the bottom. All of its content is centred. In the implementation, a compact bordered card (about 720px wide) sits over a detail modal that is still fully visible and sharp. Its title is left-",
+      "fix": "Remove the card container. Render the dialog as a full-width, transparent overlay spanning the detail-modal width (about 960px). Put a 4px red top rule at y\u2248300 and a 1px grey hairline at the bottom. Centre the title, subtitle, three icon/caption columns and the Got it! button vertically in that order. Blur the whole background (about 8px) and dim it to about 70% black."
+     },
+     "components": {
+      "score": 0.4,
+      "notes": "The three rating options and the X close button are present. The subtitle line and the 'Got it!' button are missing. The rating options are bordered tile buttons rather than freestanding icons with two-line explanatory captions. The red accent rule and the bottom divider are missing. The X is inside a card instead of at the right end under the red rule.",
+      "fix": "Add the subtitle under the title. Replace the three bordered tiles with borderless columns: a large icon above two lines of caption. Add a small dark-grey 'Got it!' button centred below. Add the red top rule and the grey bottom hairline.",
+      "missing": [
+       "subtitle 'Your feedback helps us show you more of what you like (and love!).'",
+       "'Got it!' button",
+       "red top accent rule",
+       "bottom hairline divider",
+       "two-line explanatory captions under each icon"
+      ],
+      "missing_total": 5
+     },
+     "style": {
+      "score": 0.35,
+      "notes": "The reference is an airy, minimal overlay with no container, no tile borders and generous vertical spacing, with a strong blur on the backdrop. The implementation is a dense card UI with bordered tiles and a selected-state outline, and no blur.",
+      "fix": "Remove the card background and borders and the tile borders. Increase the vertical spacing (title, then about 40px, subtitle, then about 50px, icons, then about 80px, button). Apply a backdrop-filter blur to everything behind the dialog."
+     },
+     "color": {
+      "score": 0.55,
+      "notes": "Both are dark with white text. In the reference the backdrop is dimmed heavily and blurred, and a red Netflix accent rule appears. In the implementation the backdrop artwork stays vivid and saturated. The card is grey (#222) and has grey tile fills. There is no red accent, and the subtitle is not in light grey.",
+      "fix": "Dim the backdrop to about rgba(0,0,0,0.7) and blur it. Make the dialog surface transparent. Add the #E50914 top rule. Use light grey (#ccc) for the subtitle and a dark-grey (#222) fill for the Got it! button."
+     },
+     "typography": {
+      "score": 0.4,
+      "notes": "The reference title is large (about 44px), bold and centred, with a centred subtitle of about 20px in regular weight, captions of about 17px and a bold label on the button. The implementation title is about 20px, semibold and left-aligned. Its tile labels are tiny (about 12px).",
+      "fix": "Set the title to about 44px bold and centred. Add the subtitle at about 20px regular in light grey. Set the captions to about 17px white and centred over two lines. Set the Got it! label to about 17px bold."
+     },
+     "iconography": {
+      "score": 0.7,
+      "notes": "Both use the same filled thumbs-down, thumbs-up and double-thumbs icons. In the reference they are larger (about 50px) and white. In the implementation they are about 26px and slightly grey.",
+      "fix": "Enlarge the rating icons to about 50px in solid white. Enlarge the X close icon to about 36px with a thin stroke and place it at the right edge just under the red rule."
+     },
+     "copy": {
+      "score": 0.3,
+      "notes": "The title matches. The captions differ: 'Not for me / I like this / Love this!' versus 'We won't suggest this to you again / We'll show you more like this / We know you're a true fan!'. The subtitle and the 'Got it!' CTA are missing.",
+      "fix": "Use the reference captions. Add the subtitle 'Your feedback helps us show you more of what you like (and love!).' and the 'Got it!' button."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Dialog container: the implementation shows a compact bordered grey card over the detail modal. The reference has no card: the content floats, centred, across the full modal width, between a red top rule and a grey bottom hairline.",
+     "Backdrop: in the implementation, the detail modal and home page behind it are sharp and fully saturated. In the reference, everything behind the dialog is heavily blurred and dimmed.",
+     "Title: the implementation shows a small, left-aligned title of about 20px. The reference has a large title of about 44px, bold and centred.",
+     "Below the title: the subtitle line is missing from the implementation.",
+     "Rating options: the implementation shows three bordered tile buttons with tiny one-line labels. The reference shows freestanding large white icons with two-line centred explanatory captions.",
+     "Below the options: the 'Got it!' button is missing from the implementation.",
+     "Top edge: the red accent rule is missing from the implementation.",
+     "Close X: in the implementation it sits inside the card's top-right corner. In the reference it is a larger X at the right end, just under the red rule."
+    ]
+   ]
+  },
+  "player": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.3,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.55,
+      "notes": "Both show a full-bleed video with no app chrome (correct router branch). But the implementation has no overlay layer at all: no top bar with back and flag/ad badge, and no bottom control bar.",
+      "fix": "Add an absolutely positioned overlay on top of the video. Put a top bar at ~55px from the top with the back arrow at left, and the flag icon plus the 'Ad 12' badge at right. Put a bottom bar at ~1035px with pause and volume at left, the centered status text, and fullscreen at right."
+     },
+     "components": {
+      "score": 0.15,
+      "notes": "Only the video surface exists. Every control the reference overlays on the video is absent.",
+      "fix": "Add a back-arrow button, a report/flag button, an ad countdown badge (gold left bar, 'Ad 12'), a play/pause toggle, a volume button, a centered 'X begins after ads' label and a fullscreen toggle.",
+      "missing": [
+       "back arrow button (top-left)",
+       "flag/report icon button (top-right)",
+       "ad countdown badge with gold accent bar ('Ad 12')",
+       "pause/play button (bottom-left)",
+       "volume button",
+       "centered 'begins after ads' status text",
+       "fullscreen toggle (bottom-right)"
+      ],
+      "missing_total": 7
+     },
+     "style": {
+      "score": 0.4,
+      "notes": "The flat, minimal, full-bleed cinematic look matches. The reference adds a subtle edge-to-edge treatment: clean white controls with no backgrounds and a small dark badge. None of this is present.",
+      "fix": "Render the controls as bare white icons with no button backgrounds. Make the ad badge a small dark translucent rect with a 3px gold left border."
+     },
+     "color": {
+      "score": 0.55,
+      "notes": "The dark base matches. The white control foreground and the gold/amber accent on the ad badge are missing.",
+      "fix": "Use white (#fff) for icons and text, a dark translucent fill (~rgba(0,0,0,.6)) for the badge, and a gold (#e5b33a-ish) accent bar."
+     },
+     "typography": {
+      "score": 0.2,
+      "notes": "The implementation renders no text. The reference has a centered regular-weight sans line (~22px) and small badge text.",
+      "fix": "Add a centered 'All American begins after ads'-style label in Netflix Sans/Helvetica, ~22px, regular weight, white. Badge text should be ~18px."
+     },
+     "iconography": {
+      "score": 0.1,
+      "notes": "No icons are rendered. The reference uses large white outline-style icons: arrow, flag, volume waves, fullscreen corners, and a filled pause.",
+      "fix": "Add white icons of ~40\u201348px: a left arrow, an outline flag, filled pause bars, a speaker with sound waves, and four corner brackets for fullscreen."
+     },
+     "copy": {
+      "score": 0.1,
+      "notes": "None of the reference copy appears: no 'Ad' label and no '<title> begins after ads'.",
+      "fix": "Add an 'Ad {seconds}' label to the badge and the bottom-centered text '{title} begins after ads'."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Bottom control bar: the reference shows pause, volume, the centered 'begins after ads' text and a fullscreen icon. The implementation has none.",
+     "Top bar: the reference shows a back arrow at top-left and a flag icon plus an 'Ad 12' badge with a gold accent at top-right. The implementation has none.",
+     "The implementation is a bare video frame with no overlay controls, so it reads as raw media rather than a player UI."
+    ]
+   ]
+  },
+  "player_controls": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.6,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.6,
+      "notes": "Both use a full-bleed player with a back arrow at top-left, a progress bar near the bottom and a control row along the bottom edge. Differences: the implementation puts the title at top-left next to the back arrow, while the reference centers it in the bottom control row. The reference shows only the remaining time, to the right of the scrubber. The implementation has an elapsed time on the left a",
+      "fix": "Move the title lockup out of the top bar into the center of the bottom control row. Remove the elapsed-time label left of the scrubber and keep only the remaining time on the right. Place 4 icons on the right of the bottom row: next episode, episodes, subtitles, fullscreen."
+     },
+     "components": {
+      "score": 0.5,
+      "notes": "Present: pause, rewind 10, forward 10, volume, subtitles icon, back arrow, scrubber with red progress and thumb. Missing: report/flag icon at top-right, next-episode button, episodes button, fullscreen button, buffered segment on the progress bar. Invented: an inline volume slider, two megaphone icons (one beside the volume slider, one at bottom-right), a 'Vis One' text label at top-right and an e",
+      "fix": "Add the flag icon at top-right and the next-episode, episodes and fullscreen icons at bottom-right. Remove the megaphone icons, the volume slider and the 'Vis One' label. Order the skip buttons rewind-10 then forward-10.",
+      "missing": [
+       "report/flag icon (top-right)",
+       "next episode button",
+       "episodes button",
+       "fullscreen toggle",
+       "buffered-progress segment on scrubber"
+      ],
+      "missing_total": 5
+     },
+     "style": {
+      "score": 0.75,
+      "notes": "Both are flat and minimal, with white controls over the video and a thin scrubber. The implementation's volume slider and its smaller, tighter icons add a different density.",
+      "fix": "Enlarge the control icons to about 48px and space them evenly, as in the reference, with no inline slider."
+     },
+     "color": {
+      "score": 0.85,
+      "notes": "Both use a dark scheme with white icons and a Netflix-red progress fill and thumb. The reference also has a light-grey buffered segment and a grey track. The implementation adds a red volume slider.",
+      "fix": "Add a light-grey buffered segment to the track and drop the red volume slider."
+     },
+     "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. The reference's title is a single centered line: series name in bold, then the episode code and title in regular weight. The implementation uses a small grey 'S1:E1' label followed by a large bold title at top-left. The time labels are smaller in the implementation.",
+      "fix": "Render the title as one centered line, '<Show> E1 <Episode title>', with the show name semibold and the rest regular, at about 20px. Make the time label about 16px."
+     },
+     "iconography": {
+      "score": 0.6,
+      "notes": "Matches: the outline back arrow, volume, subtitle and rewind/forward icons with '10'. Differs: the pause icon is drawn as an outlined pair of bars instead of solid filled bars. The 10s icons are swapped, and the '10' inside them is tiny. The megaphone icons are foreign. The flag, next-episode, episodes and fullscreen icons are absent.",
+      "fix": "Use filled pause bars. Make the '10' inside the rewind/forward icons larger, matching the reference. Replace the megaphones with next-episode (play-bar), episodes (stacked cards) and fullscreen (corner brackets) icons. Add the flag icon at top-right."
+     },
+     "copy": {
+      "score": 0.6,
+      "notes": "The implementation shows a 'S1:E1' prefix and an unexplained 'Vis One' label that the reference does not have. The reference uses the format '<Show> E1 <Episode>'. The reference has no elapsed-time label.",
+      "fix": "Remove 'Vis One' and change the title format to '<Show> E<n> <Episode title>'."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "bottom-right: the reference has next-episode, episodes, subtitles and fullscreen icons; the implementation shows only a megaphone and a subtitles icon",
+     "top-right: the reference shows a flag/report icon; the implementation shows a 'Vis One' text label instead",
+     "title: the reference centers the title in the bottom control row; the implementation places it at top-left next to the back arrow with an 'S1:E1' prefix",
+     "bottom-left: the implementation adds an inline red volume slider and a megaphone icon that the reference does not have",
+     "bottom-left: the skip buttons are ordered forward then rewind in the implementation; the reference has rewind then forward",
+     "scrubber: the implementation adds an elapsed-time label at left; the reference shows only the remaining time at right and has a light-grey buffered segment",
+     "pause icon: outlined bars in the implementation; solid filled bars in the reference"
+    ]
+   ]
+  },
+  "account_menu": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.55,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.6,
+      "notes": "Both use the same top bar: logo on the left, horizontal nav, then search, bell and avatar with a caret on the right. The dropdown is anchored under the avatar at the top-right in both. Differences: the reference dropdown is taller (~350px) and sits in a slightly different place, starting just below the header. Behind the menu, the reference shows the 'Browse by Languages' page (page title, 'Select",
+      "fix": "Open the account menu over the 'Browse by Languages' grid page, matching the reference. Make the dropdown ~275px wide, right-aligned under the avatar, with ~58px rows."
+     },
+     "components": {
+      "score": 0.5,
+      "notes": "Present: a profile row with an avatar, Manage Profiles, Account, a Help item, Sign out, and the caret. Missing: the leading icons on each menu row (pencil, transfer, person, question mark), the 'Transfer Profile' item, and the Kids shortcut in the header (Kids avatar plus 'Kids' label next to the bell). The active nav item 'Browse by Languages' has a pill-shaped highlight in the reference; the imp",
+      "fix": "Change the menu to: [Kids avatar] Kids / [pencil] Manage Profiles / [transfer] Transfer Profile / [person] Account / [?] Help Center / divider / Sign out of Netflix. Remove the divider between Manage Profiles and Account. Add the Kids avatar and label before the profile avatar in the header.",
+      "missing": [
+       "Transfer Profile menu item",
+       "Pencil icon on Manage Profiles",
+       "Transfer icon on Transfer Profile",
+       "Person icon on Account",
+       "Question-mark icon on Help Center",
+       "Header Kids profile shortcut (kids avatar + 'Kids' label)",
+       "Pill highlight on the active nav item"
+      ],
+      "missing_total": 7
+     },
+     "style": {
+      "score": 0.45,
+      "notes": "The reference menu has rounded corners (~8px), a soft dark-grey surface with no visible border, and airy ~58px rows. The implementation's menu has square corners, a black surface with a hairline grey border, and compact ~38px rows. The reference's active nav item is a rounded pill; the implementation has no pill.",
+      "fix": "Give the menu an 8px border radius, no border, a soft shadow, ~16px padding and ~58px row height. Use a pill (full radius, #333 background) for the active nav item."
+     },
+     "color": {
+      "score": 0.7,
+      "notes": "Both use a dark scheme with white text and Netflix-red branding. The reference menu surface is dark grey (~#222) with light-grey text. The implementation's menu is near-black with a grey border.",
+      "fix": "Set the menu background to ~#232323 with no border, and the active nav pill to ~#333."
+     },
+     "typography": {
+      "score": 0.45,
+      "notes": "Both use sans-serif type. Reference menu labels are ~17px regular, and 'Sign out of Netflix' is regular and left-aligned. The implementation's labels are ~13px, and its sign-out link is bold and centred. Nav labels are also smaller in the implementation.",
+      "fix": "Set menu items to 17px regular. Make 'Sign out of Netflix' 17px regular and left-aligned. Set nav links to ~17px."
+     },
+     "iconography": {
+      "score": 0.4,
+      "notes": "Every reference menu row has a ~24px outline icon (pencil, transfer, person, question mark), and the profile row uses the colourful Kids avatar as a rounded square. The implementation's rows have no icons, and its profile avatar is a generic blue silhouette. The header Kids avatar is missing.",
+      "fix": "Add 24px outline icons, ~2px stroke, to the left of each menu label, with ~16px spacing. Add the Kids avatar in the header."
+     },
+     "copy": {
+      "score": 0.7,
+      "notes": "Matches: 'Manage Profiles', 'Account', 'Sign out of Netflix'. Differs: 'Help Centre' vs 'Help Center'. 'Transfer Profile' is missing.",
+      "fix": "Rename 'Help Centre' to 'Help Center' and add 'Transfer Profile'."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Account dropdown: none of the rows have the leading outline icons the reference shows (pencil, transfer, person, question mark)",
+     "Account dropdown: the 'Transfer Profile' item between Manage Profiles and Account is missing",
+     "Account dropdown: square corners, a hairline border, a black surface and compact ~38px rows. The reference uses a rounded (~8px), borderless dark-grey panel with airy ~58px rows",
+     "Account dropdown: labels are ~13px. The reference uses ~17px",
+     "Account dropdown: 'Sign out of Netflix' is bold and centred. The reference sets it regular and left-aligned",
+     "Account dropdown: an extra divider sits between Manage Profiles and Account. The reference has a single divider, just above Sign out",
+     "Header right: the Kids shortcut (Kids avatar + 'Kids' label) between the bell and the profile avatar is missing",
+     "Header nav: the active item is shown as bold text. The reference uses a rounded grey pill highlight",
+     "Background page: the implementation shows the home hero. The reference shows the Browse by Languages page with its title, preference dropdown and tile grid",
+     "Copy: 'Help Centre' should be 'Help Center'"
+    ]
+   ]
+  },
+  "card_hover_preview": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.45,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.4,
+      "notes": "Both use the same top nav (logo left, links, search/bell/avatar right) and stacked horizontal rails with titles on the left. The differences are big. The reference is a category subpage: under the nav it has a 'TV Shows > Sports TV Shows' breadcrumb header, then rails over a faint backdrop, with no billboard hero. The implementation shows a full billboard hero with a title, synopsis and Play/More ",
+      "fix": "Render this state on a genre subpage layout. Put a breadcrumb header ('TV Shows >' in grey + a large white genre title) under the nav and remove the billboard hero. Shrink tiles so about 6 fit across. Let the hover card escape the rail's overflow (portal it or set overflow: visible), scale it to about 1.5x the tile width and centre it on the tile so it overlaps the rails above and below."
+     },
+     "components": {
+      "score": 0.45,
+      "notes": "The hover card has a play button, a circular secondary button, a like button and an expand chevron, which matches. Its metadata row is cut off and unreadable. The card is missing the genre tag row ('Charming \u2022 Intimate \u2022 Sitcom'), the mute toggle over the preview, and the title-logo artwork over the preview. The '+' add button appears as a check. The nav is missing the 'Kids' profile link next to ",
+      "missing": [
+       "breadcrumb / genre page header ('TV Shows > Sports TV Shows')",
+       "hover card mute toggle over preview",
+       "hover card title-logo overlay on preview art",
+       "hover card genre tags row with dot separators",
+       "fully visible maturity/seasons/HD metadata row",
+       "'+' add-to-list button (shows check instead)",
+       "Kids profile link in nav",
+       "rail page-indicator dashes at the top right of each rail",
+       "tile badges (TOP 10 / Recently Added) treatment"
+      ],
+      "missing_total": 9
+     },
+     "style": {
+      "score": 0.6,
+      "notes": "Both are flat and dark with slightly rounded tiles. The reference hover card is a solid dark-grey (#181818) elevated panel with a deep shadow and generous padding below the preview. The implementation card has no visible panel body: its controls sit straight on the image and get cut off. The selected nav item in the reference is a pill-highlighted 'Shows'; the implementation uses bold text for 'Ho",
+      "fix": "Give the hover card a #181818 body below the 16:9 preview, with a 4\u20136px radius, a strong drop shadow and about 16\u201320px padding. Highlight the active nav item with a rounded grey pill."
+     },
+     "color": {
+      "score": 0.75,
+      "notes": "Both use the same near-black base, white text and Netflix red logo. The reference card body is a dark-grey surface with grey dot separators. The implementation has no distinct card surface and shows a green 'Match' text the reference card doesn't have.",
+      "fix": "Use a #181818 card body, grey (#777) bullet separators and outline-grey maturity/HD badges. Drop the green match text from the hover card."
+     },
+     "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. The reference has large regular-weight rail titles (about 26px) and a large 40px breadcrumb title. The implementation's rail titles are bold. The hover card shows plain bold title text where the reference uses logo artwork. The reference metadata is about 17px and readable; the implementation's is tiny and clipped.",
+      "fix": "Set rail headings to medium/regular weight at about 26px. Use title-logo artwork in the card instead of plain text. Set card metadata to about 16\u201317px: maturity badge outlined, 'N Seasons', a small HD badge, and a white genre row below it."
+     },
+     "iconography": {
+      "score": 0.65,
+      "notes": "Both use circular outlined action buttons with a filled white play button and a chevron. The reference buttons are larger (about 52px) with thin outlines. The implementation's are small (about 30px). The mute icon is missing. The implementation's tiles have no badge ribbons where the reference shows red TOP 10 / Recently Added badges.",
+      "fix": "Enlarge the hover action buttons to about 50px with 2px grey outlines, and add a ghost mute button at the bottom right of the preview. Put the expand chevron in the same size circle."
+     },
+     "copy": {
+      "score": 0.7,
+      "notes": "The nav labels match (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages). 'Kids' is missing. The breadcrumb heading copy is absent. The card's metadata wording matches ('TV-14', 'N Seasons', 'HD'), but genre tags are missing.",
+      "fix": "Add the 'Kids' nav item and the 'TV Shows >' breadcrumb, and render the genre tags as 'Tag \u2022 Tag \u2022 Tag'."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "hover card: the implementation is barely enlarged and clipped by the rail (the metadata row is cut off at the bottom). The reference card is about 1.5x larger and floats over the neighbouring rails with a full dark info panel.",
+     "hover card info panel: the implementation lacks the genre tags row and has no readable maturity/seasons/HD row.",
+     "page top: the implementation shows a billboard hero (title, synopsis, Play/More Info). The reference shows a breadcrumb header 'TV Shows > Sports TV Shows' and no hero.",
+     "hover card preview: no title-logo overlay and no mute toggle on the implementation's preview image.",
+     "hover card buttons: smaller in the implementation, and the add button is a check instead of '+'.",
+     "rails: the implementation tiles are larger (5 per row vs about 6), carry title text overlays and use chevron arrows. The reference uses page-indicator dashes at the top right and no text overlays.",
+     "nav: the implementation highlights 'Home' in bold. The reference highlights the active item with a grey pill and has a 'Kids' link before the avatar."
+    ]
+   ]
+  },
+  "card_preview": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.45,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.4,
+      "notes": "Both use the same top bar: NETFLIX wordmark on the left, then nav links, with search, bell and avatar on the right. The page underneath is different. The reference is the 'Browse by Languages' grid: a page title with 'Select Your Preferences' and two dropdowns on the right, then a 6-column tile grid with no row headings. The implementation shows the Home page instead: a full-bleed hero, then title",
+      "fix": "Render the hovered card as a floating overlay: scale it to about 1.5\u00d7 the tile width, centre it vertically on the tile so it extends well above the row, give it a z-index above the following rows, and remove overflow clipping on the rail container so the whole card shows."
+     },
+     "components": {
+      "score": 0.45,
+      "notes": "The card has the same control set as the reference: a white filled play circle, outlined check and thumbs-up circles, and an outlined chevron circle on the right. In the implementation these circles are about 30px, where the reference's are about 52px. The metadata row (rating box, seasons, HD badge) is cut off and unreadable. The genre-tag row ('Imaginative \u2022 Adventure \u2022 Epic World') is missing e",
+      "fix": "Enlarge the action buttons to about 52px circles with a 2px grey outline. Below them, add a full metadata row (outlined rating box, 'N Seasons', outlined HD badge) and a genre row of three tags separated by grey bullets. Add a circular mute button at the bottom-right of the artwork. Drop the plain-text title overlay inside the card.",
+      "missing": [
+       "genre tag row with bullet separators",
+       "readable metadata row (rating box, seasons, HD badge)",
+       "mute toggle circle on the preview artwork",
+       "N badge on the preview artwork",
+       "'Browse by Languages' page title",
+       "'Select Your Preferences' language dropdowns",
+       "pill-highlighted active nav item"
+      ],
+      "missing_total": 7
+     },
+     "style": {
+      "score": 0.6,
+      "notes": "The dark, flat, minimal style matches. The reference card has a dark #181818 info panel with generous padding (about 18px) and a rounded bottom with a soft shadow. The implementation's info area is cramped and cut off, so its padding rhythm and depth don't come across.",
+      "fix": "Give the card's info panel #181818 with about 18px padding, a 6px radius on the bottom corners, and a diffuse shadow of about 0 8px 24px rgba(0,0,0,.75)."
+     },
+     "color": {
+      "score": 0.75,
+      "notes": "Both use a #141414 dark base with white text and a red brand colour. The reference's active nav item is a grey pill. In the implementation the active item is bold white with no pill. The implementation also has a green 'Match' text that the reference card doesn't show.",
+      "fix": "Remove the green match text from the hover card. Use a grey pill (about #333) behind the active nav item."
+     },
+     "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. The reference card metadata is about 17px regular white, and the genre tags are the same size. In the implementation the card text is tiny (about 10px) and clipped. The reference's page heading is a large 34px regular-weight 'Browse by Languages'. The implementation has bold rail headings instead.",
+      "fix": "Set the hover-card metadata and genre text to about 16\u201317px regular white, and show the rating and HD in thin-outlined boxes."
+     },
+     "iconography": {
+      "score": 0.65,
+      "notes": "The icon styles match: outline check, thumbs-up and chevron, and a filled play triangle. The implementation's icons are much smaller. The artwork crop (16:9 cover) is consistent between the two.",
+      "fix": "Scale the icon buttons to about 52px with icons of about 24px, and add a speaker-muted icon button over the artwork."
+     },
+     "copy": {
+      "score": 0.6,
+      "notes": "The nav labels match: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages. The reference's 'Kids' link is absent in the implementation. Also absent are 'Select Your Preferences', the 'Original Language'/'English' dropdowns, and the page title.",
+      "fix": "Add the 'Kids' profile link next to the avatar."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Hover card: the implementation is barely enlarged and stays inside the row. The reference card is about 1.5\u00d7 the tile and rises well above its row.",
+     "Hover card bottom: the implementation's metadata row is clipped by the 'Continue Watching for You' heading, and the genre-tag row never appears. The reference shows both rows in full.",
+     "Hover card buttons: the implementation's circles are about 30px. The reference's are about 52px with clear outlines.",
+     "Hover card artwork: the implementation has no mute circle at bottom-right and no N badge at top-left, and it adds a plain-text title overlay.",
+     "Page context: the implementation shows the Home hero and titled rails. The reference is the Browse by Languages page with a page title, preference dropdowns and an unlabeled 6-column grid.",
+     "Top nav: the implementation has no grey pill on the active item and no 'Kids' link."
+    ]
+   ]
+  },
+  "shows_genres_menu": {
+   "capture_missing": false,
+   "judgments": 1,
+   "similarity_mean": 0.74,
+   "similarity_sd": null,
+   "dimensions": [
+    {
+     "layout": {
+      "score": 0.8,
+      "notes": "The overall structure matches the reference: a transparent top nav, a 'TV Shows' title with a Genres dropdown underneath, a three-column genre panel, a full-bleed hero with the logo at bottom-left and Play/More Info buttons, then a 'Today's Top Picks' row. Differences: the hero is indented about 105px, while the reference's logo and buttons line up with the 67px gutter. The hero also adds a metada",
+      "fix": "Line the hero logo and buttons up with the page gutter (about 64px). Remove the metadata row and synopsis so the buttons sit right under the logo. Add the mute circle and the TV-rating flag on the right edge, level with the buttons. Lay the genre list out as 3 columns of about 9 rows each."
+     },
+     "components": {
+      "score": 0.68,
+      "notes": "The nav items, search, bell, avatar dropdown, Genres dropdown, genre grid, hero logo, Play/More Info buttons and carousel are all there. Missing: the active 'Shows' pill, the Kids profile entry, the mute toggle, the maturity-rating flag, the TOP 10 badges and the red status ribbons on cards ('New Season', 'Recently Added'), and the row-pagination indicator. Added: count numbers next to each genre,",
+      "missing": [
+       "Active 'Shows' pill highlight in nav",
+       "Kids profile link with icon",
+       "Mute/volume circle button",
+       "TV-rating flag tab on right edge",
+       "TOP 10 badges on cards",
+       "Red status ribbons on cards (New Season / Recently Added / New Episode)",
+       "Row page indicator dashes"
+      ],
+      "missing_total": 7
+     },
+     "style": {
+      "score": 0.72,
+      "notes": "Both use flat, dark Netflix styling with square corners. The reference's genre panel is a near-black translucent block with no visible border and airy rows. The implementation's panel is a lighter grey with a hairline border and denser spacing. The reference's Genres button has a thin white outline on a black fill. The implementation's is similar but taller and uses a chevron instead of a caret. T",
+      "fix": "Make the genre panel rgba(0,0,0,0.9) with no border and about 29px row pitch. Use a small solid triangle caret on the Genres button. Put the active nav item in a rounded translucent grey pill."
+     },
+     "color": {
+      "score": 0.85,
+      "notes": "Both use a dark scheme with a red Netflix wordmark, a white Play button, a translucent grey More Info button and white text, so the palette matches. The implementation adds a green 'Match' accent. It is also missing the reference's red TOP 10 and ribbon accents on the cards.",
+      "fix": "Remove the green match text. Add red TOP 10 badges and red ribbon labels to the cards."
+     },
+     "typography": {
+      "score": 0.7,
+      "notes": "Both use sans type, and the title and row-heading sizes are similar. The reference's genre items are about 15px regular white. The implementation's are about 12px, which is too small. The reference's Genres label is larger and letter-spaced; the implementation's is small. The implementation's card titles are bold overlay text, which the reference does not have. The nav text is close.",
+      "fix": "Set genre items to about 15px regular white. Set the Genres button label to about 17px with slight letter spacing. Remove the bold title overlays from the cards."
+     },
+     "iconography": {
+      "score": 0.75,
+      "notes": "Search, bell, avatar caret, play triangle and the info circle all match. The implementation uses a generic silhouette avatar where the reference has the blue smiley profile avatar, and it has no Kids icon or mute icon. The hero logo artwork and 16:9 cards match in treatment.",
+      "fix": "Use a square, colour-filled profile avatar. Add a Kids icon and a speaker-mute icon inside an outlined circle."
+     },
+     "copy": {
+      "score": 0.75,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match. The genre list uses different terms and adds an 'All TV Shows' entry and count numbers. Examples: 'Action & Adventure' vs 'Action', 'Comedy' vs 'Comedies', 'Documentary' vs 'Documentaries'. The reference's 'Kids' label is missing.",
+      "fix": "Remove the counts and the 'All TV Shows' entry. Use plural, Netflix-style genre names (Comedies, Dramas, Documentaries, Anime, British, Kids, etc.)."
+     }
+    }
+   ],
+   "deviations": [
+    [
+     "Hero: the implementation adds a match/year/rating/seasons metadata row and a synopsis paragraph that the reference does not have, and indents the hero to about 105px instead of lining it up with the 67px gutter",
+     "Genre dropdown panel: the implementation shows count numbers beside each genre, an 'All TV Shows' entry, small 12px text, a lighter bordered panel and only 5 rows; the reference has 3 columns of about 9 plain 15px items on a borderless near-black panel",
+     "Carousel cards: the reference's TOP 10 badges and red status ribbons are missing, and the implementation adds bold title text overlays",
+     "Hero right edge: the reference's mute circle button and 'TV-MA' rating flag are missing",
+     "Nav: the active 'Shows' item has no rounded grey pill, and the 'Kids' profile link with icon is missing",
+     "Genres button: the implementation uses a chevron and small label; the reference uses a solid caret and a larger, letter-spaced label"
+    ]
+   ]
+  }
+ },
+ "n_screens": 20,
+ "n_scored": 20,
+ "mean_similarity": 0.593,
+ "below_0.55": [
+  "card_hover_preview",
+  "card_preview",
+  "games",
+  "player",
+  "rate_dialog"
+ ]
+}

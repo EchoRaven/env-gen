@@ -1,0 +1,94 @@
+{
+ "account": "tour938814@example.com",
+ "log": [
+  {
+   "home": "http://localhost:15000/browse"
+  },
+  {
+   "play_buttons_on_home": 90
+  },
+  {
+   "hero_play": {
+    "url": "http://localhost:15000/watch/29?ep=49",
+    "video": {
+     "src": "http://localhost:15000/assets/video/clip_30997958.mp4",
+     "t": 0,
+     "paused": true,
+     "err": 4
+    }
+   }
+  },
+  {
+   "step": 1,
+   "name": "hero_play",
+   "url": "http://localhost:15000/watch/29?ep=49"
+  },
+  {
+   "step": 2,
+   "name": "title__browse_title_48",
+   "url": "http://localhost:15000/browse?title=48"
+  },
+  {
+   "route": "/browse?title=48",
+   "dialog": 1,
+   "visible_play": 1
+  },
+  {
+   "title_play": {
+    "from": "/browse?title=48",
+    "url": "http://localhost:15000/watch/48",
+    "changed": true,
+    "video": {
+     "src": "http://localhost:15000/assets/video/clip_35079542.mp4",
+     "t": 0,
+     "paused": true,
+     "err": 4
+    }
+   }
+  },
+  {
+   "step": 3,
+   "name": "title_play__browse_title_48",
+   "url": "http://localhost:15000/watch/48"
+  },
+  {
+   "step": 4,
+   "name": "title__title_48",
+   "url": "http://localhost:15000/browse?title=48"
+  },
+  {
+   "route": "/title/48",
+   "dialog": 1,
+   "visible_play": 1
+  },
+  {
+   "title_play": {
+    "from": "/title/48",
+    "url": "http://localhost:15000/watch/48",
+    "changed": true,
+    "video": {
+     "src": "http://localhost:15000/assets/video/clip_35079542.mp4",
+     "t": 0,
+     "paused": true,
+     "err": 4
+    }
+   }
+  },
+  {
+   "step": 5,
+   "name": "title_play__title_48",
+   "url": "http://localhost:15000/watch/48"
+  },
+  {
+   "step": 6,
+   "name": "languages_menu",
+   "url": "http://localhost:15000/browse"
+  },
+  {
+   "step": 7,
+   "name": "languages_page",
+   "url": "http://localhost:15000/browse/languages"
+  }
+ ],
+ "console_errors": []
+}

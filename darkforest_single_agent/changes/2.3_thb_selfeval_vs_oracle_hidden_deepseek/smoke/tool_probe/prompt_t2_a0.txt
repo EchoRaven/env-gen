@@ -1,0 +1,1 @@
+What exact text did you write to /workspace/note.txt in the previous turn? Answer from memory, do not run commands.

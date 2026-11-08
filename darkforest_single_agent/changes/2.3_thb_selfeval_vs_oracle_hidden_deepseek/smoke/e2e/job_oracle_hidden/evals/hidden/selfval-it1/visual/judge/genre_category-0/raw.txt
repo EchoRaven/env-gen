@@ -1,0 +1,72 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Both screens share the same structure: a full-bleed hero with a transparent top nav, a breadcrumb and title at the top left, the hero text block at the lower left with buttons, and a horizontal row of 16:9 cards starting at about y=840. Differences: the reference puts the breadcrumb and title on one line ('TV Shows > Sports TV Shows'), while the implementation stacks a small breadcrumb above the title and adds an 'All Genres' control. The nav bar is shorter and more compact in the implementation. The reference's right-side mute and rating flag is replaced by a small 'FILM' tag.",
+      "fix": "Put the breadcrumb and title on one baseline: a grey 'TV Shows' link, a '>' separator, then a large white category title. Remove the separate stacked crumb and the 'All Genres' control. Make the nav about 85px tall with a larger font."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: Netflix logo, 7 nav items, search, bell, profile avatar with name, Play and More Info buttons, synopsis, card row with row title. Missing: the pill highlight on the active nav item 'Shows', the Kids profile entry, the caret next to the avatar, the circular mute button and the TV-14 rating flag on the right edge of the hero, the badges on cards (TOP 10 corner badge, red 'Recently Added', 'New Season' and 'Live Now' pills), and the row pagination indicator. Invented: a metadata row (match %, year, rating, duration, HD, TOP 10), an 'N ACTION' eyebrow label, a circular + button, an 'All Genres' control, and title text overlaid on the cards.",
+      "fix": "Add a rounded grey pill behind the active 'Shows' tab, a Kids profile link and a caret on the avatar, and a mute button plus a rating flag with a left border at the hero's right edge. Add TOP 10 corner badges and red bottom-centred status pills to the cards. Remove the metadata row, eyebrow label, + button and 'All Genres' control.",
+      "missing": [
+        "active nav pill highlight on 'Shows'",
+        "Kids profile entry",
+        "profile dropdown caret",
+        "hero mute/replay circular button",
+        "TV-14 maturity rating flag on right edge",
+        "TOP 10 corner badges on cards",
+        "red status pills on cards (Recently Added / New Season / Live Now)",
+        "row page indicator dashes"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same cinematic, flat Netflix language: a full-bleed backdrop with a dark bottom fade, a white Play button, a translucent grey More Info button, slightly rounded corners, and no shadows. The implementation adds a dense metadata row and an extra outline circle button, and its spacing is tighter overall.",
+      "fix": "Remove the metadata clutter, make the hero buttons larger (about 58px tall with more padding), and add more padding to the nav."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both are dark with Netflix red, white text and translucent grey buttons. The implementation adds green 'Match' text and a red TOP 10 tag in the hero, and it lacks the red status pills on cards. The red-tinted backdrop is content, not a design difference.",
+      "fix": "Drop the green match text. Use red only for the logo, the card status pills and the TOP 10 badges."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use sans-serif. The reference's nav labels are about 18px; the implementation's are about 13px. The reference title is about 44px regular weight with a larger grey crumb; the implementation's is bold about 30px with a tiny crumb above it. The reference hero shows artwork-style title art, while the implementation sets the title as plain heavy text. The reference synopsis is larger (about 22px) and white; the implementation's is about 16px. The implementation also overlays bold titles on the cards.",
+      "fix": "Make nav labels about 17–18px and the category title about 44px regular weight with a same-line grey crumb. Make the synopsis about 22px. Use a title-art image instead of plain text. Remove text overlays from the cards."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The line search and bell icons, the filled play triangle and the 16:9 cover-cropped cards with small radius all match. The implementation's More Info button has no circled 'i' icon. The mute icon is missing. The avatar is a generic square with no caret.",
+      "fix": "Add a circled-i outline icon to More Info, add a circular outline mute icon on the hero's right, and use a rounded-square avatar with a ▾ caret."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels, Play and More Info match. The breadcrumb separator is '/' where the reference uses '>'. The extra 'All Genres' and 'FILM' labels are not in the reference. The row title 'Popular in Action' is acceptable as content.",
+      "fix": "Change the breadcrumb separator to '>', remove the 'All Genres' and 'FILM' labels, and show a rating label such as 'TV-14' in the right flag."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "Top nav: the active 'Shows' item has no rounded grey pill highlight. Labels are much smaller and the bar more compact than the reference.",
+    "Hero right edge: the circular mute button and the bordered TV-14 maturity flag are missing. The implementation shows a small 'FILM' tag instead.",
+    "Card row: the reference's TOP 10 corner badges and red bottom 'Recently Added' / 'New Season' / 'Live Now' pills are absent. The implementation instead overlays bold title text on every card.",
+    "Hero text block: the implementation adds an 'N ACTION' eyebrow, a metadata row (match %, year, rating, duration, HD, TOP 10) and a circular + button, none of which the reference has.",
+    "Header title area: the reference puts a grey crumb, '>' and a large title on one line. The implementation stacks a tiny 'TV Shows / Action' crumb above a bold smaller title and adds an 'All Genres' control.",
+    "Hero title: the reference uses stylized title-art; the implementation uses plain heavy sans text.",
+    "Top right: the Kids profile entry and the avatar caret are missing.",
+    "More Info button has no circled-i icon, and both hero buttons are smaller than the reference's.",
+    "Synopsis text is smaller and greyer than the reference's larger white synopsis."
+  ],
+  "fixes": [
+    "Add a rounded grey pill behind the active 'Shows' nav item and increase nav labels to about 18px.",
+    "Add a Kids profile link and a ▾ caret next to the avatar.",
+    "Replace the stacked breadcrumb with one line: a grey 'TV Shows' link, '>', then a large regular-weight category title. Remove 'All Genres'.",
+    "Remove the eyebrow label, metadata row and + button from the hero. Keep only title art, synopsis (about 22px, white), Play, and More Info with a circled-i icon, both larger.",
+    "Add a circular outline mute button and a TV-14 rating flag with a left border at the hero's right edge. Remove the 'FILM' tag.",
+    "Remove title overlays from the cards. Add TOP 10 corner badges and red bottom-centred status pills (Recently Added / New Season / Live Now).",
+    "Add the dash-style page indicator above the right end of the row."
+  ],
+  "summary": "Same Netflix genre-page skeleton (hero, breadcrumb title, card row), but the active-nav pill, the hero's mute button and rating flag, and the card badges are missing; extra hero metadata and controls were added; and the header and type sizes differ."
+}

@@ -1,0 +1,72 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both have a dark top bar with the logo on the left, a horizontal nav, and search, bell and profile on the right. Below it, both stack full-width horizontal rows of about 5.3 landscape tiles with a 65px left gutter. The reference shows only stacked rows starting right under the nav. The implementation puts the bottom of a hero (Play / More Info / + buttons over artwork) above the first row, uses more vertical space per row, and has an empty 'Continue Watching' section that breaks the rhythm. Its nav bar is shorter (about 68px vs about 88px).",
+      "fix": "Start the browse rows right under the nav, with no hero remnant, in this scroll state. Use a nav bar about 88px tall. Space rows at about 287px (title plus a 197px-tall tile row). Don't render a section when its row has no tiles."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: logo, 7 nav links, search, bell, profile avatar, row headings, and tile carousels with a peeking 6th tile. Missing: the pill highlight on the active 'Home' link, the 'Kids' profile switcher, the caret next to the avatar, the dash page indicators at the top right of each row, the badges on tiles ('New Season', 'New Episode', 'Watch Now', 'Recently Added'), the red 'TOP 10' corner badge, and the outlined 'BETA' chip next to the 'Games' heading. Extra: a hero CTA strip, a back-arrow button above a row, an expanded hover card, a text-only empty row, and a big-numeral Top 10 row.",
+      "missing": [
+        "Active-nav pill background on 'Home'",
+        "'Kids' profile link with icon",
+        "Profile dropdown caret",
+        "Row pagination dash indicators (top-right of each row)",
+        "Bottom-centered status badges on tiles (New Season / New Episode / Watch Now / Recently Added)",
+        "Red 'TOP 10' corner badge on tiles",
+        "'BETA' outlined chip beside row heading"
+      ]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are flat, dark and cinematic, with dense landscape tiles and small gaps. The reference's tiles have more rounded corners (about 8–10px) than the implementation's (about 4px). The implementation adds a heavy gradient behind its tile titles, which the reference doesn't have, and the expanded hover card adds visual noise.",
+      "fix": "Raise the tile corner radius to about 8–10px, and remove the bottom gradient and title overlay from tiles."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use the same dark base (#141414-ish), a black nav, white text and red brand accents. The reference uses red as the fill for the badges and TOP 10 tags, and the implementation has no red accents beyond the logo. The reference's active nav pill is grey (#333-ish).",
+      "fix": "Add red (#E50914) fills for the badges and TOP 10 tags, and a dark grey pill behind the active nav item."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a bold sans for row headings in a similar heading size. The nav links are much smaller in the implementation (about 13px vs about 17px), and its active link is bold rather than sitting in a pill. Tile titles are rendered as bold text over the artwork, while the reference's titles live inside the artwork itself.",
+      "fix": "Set nav links to about 17px regular, and put the active link on a pill at the same weight. Remove text titles from tiles."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "The search and bell icons are similar outline icons. The reference's profile is a square smiley avatar with a caret, plus a colourful Kids icon. The implementation shows a name label next to its avatar and no caret. Tiles are 16:9 cover crops in both. The implementation's Top 10 row uses big outlined numerals that don't appear in the reference.",
+      "fix": "Add the Kids icon and label, and a caret after a square avatar. Drop the name label. Put the corner TOP 10 badge on tiles instead of using numerals."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels match exactly (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages). The implementation is missing 'Kids' and adds the profile name 'Vis One'. It also adds an empty-state line and 'Play' / 'More Info' button labels, none of which appear in the reference.",
+      "fix": "Add the 'Kids' label, remove the profile name text, and remove the empty-state sentence."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "top of content: the implementation shows the bottom of a hero (Play / More Info / + buttons over artwork) above the rows; the reference starts straight into rows under the nav",
+    "tiles: the reference's bottom-centered badges ('New Season', 'Recently Added', 'Watch Now') and red 'TOP 10' corner badges are absent in the implementation",
+    "tiles: the implementation overlays bold text titles on a bottom gradient; the reference has clean artwork with no text overlay",
+    "row headers, right side: the reference's dash page indicators are missing; the implementation adds a back-arrow button above 'Trending Now'",
+    "nav: the active 'Home' has no grey pill in the implementation, and the nav text is much smaller",
+    "nav, right side: the 'Kids' link and the avatar caret are missing; the implementation adds a 'Vis One' name label",
+    "middle: the implementation renders a 'Continue Watching' heading with only an empty-state sentence, which the reference doesn't have",
+    "'Top 10' row: the implementation uses big outlined numerals beside the tiles, a treatment the reference doesn't show",
+    "Trending row: the implementation shows an expanded hover card (play, add and like buttons, plus metadata) over a tile; the reference shows none",
+    "tile corners: about 4px in the implementation vs about 8–10px in the reference",
+    "'Games' heading: the reference's outlined 'BETA' chip has no counterpart in the implementation"
+  ],
+  "fixes": [
+    "Render the rows-only state: no hero remnant above the first row, and hide rows that have no tiles",
+    "Remove the title text and gradient from tiles; add a bottom-centered red status badge (and a white 'Watch Now' companion) plus a red 'TOP 10' corner tag on the tiles that need them",
+    "Add segmented dash page indicators at the top right of each row and remove the arrow button",
+    "Nav: make it about 88px tall with links at about 17px, put the active link on a dark grey rounded pill, and add the Kids icon and label plus a caret after a square avatar; remove the name label",
+    "Increase the tile corner radius to about 8–10px and keep 16:9 tiles about 350px wide with about 9px gaps",
+    "Use plain tile rows instead of big outlined numerals for the Top 10 row, and add outlined chip support (e.g. 'BETA') beside row headings",
+    "Don't show hover-expanded cards by default"
+  ],
+  "summary": "Same Netflix-style dark rows layout and nav, but the hero remnant, text-overlay tiles and empty-state row diverge from the reference, and its tile badges, row indicators, active-nav pill and Kids/caret profile controls are missing."
+}

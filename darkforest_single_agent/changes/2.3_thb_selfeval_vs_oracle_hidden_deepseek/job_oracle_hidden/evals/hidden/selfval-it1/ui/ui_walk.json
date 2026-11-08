@@ -1,0 +1,31 @@
+{
+ "checks": [
+  {
+   "name": "landing renders with Sign In and an email field",
+   "ok": true,
+   "detail": "sign in\nunlimited movies, tv shows, and more\n\nstories for every mood. pick a pro"
+  },
+  {
+   "name": "Sign In leads to /login",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/login"
+  },
+  {
+   "name": "walk did not crash",
+   "ok": false,
+   "detail": "TimeoutError('Locator.fill: Timeout 30000ms exceeded.\\nCall log:\\n  - waiting for locator(\"input[type=password]\").first\\n')"
+  },
+  {
+   "name": "no broken images on visited pages",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "name": "no console errors during the walk",
+   "ok": true,
+   "detail": "[]"
+  }
+ ],
+ "passed": 4,
+ "total": 5
+}

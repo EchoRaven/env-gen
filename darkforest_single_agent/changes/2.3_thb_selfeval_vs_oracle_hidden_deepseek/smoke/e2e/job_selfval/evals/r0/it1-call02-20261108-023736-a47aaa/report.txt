@@ -1,0 +1,48 @@
+env-gen api_smoke: FAILED - 13/14 checks passed (31s).
+Contract endpoints answering 2xx with a token: 0/15. Business-chain steps ok: 2/8.
+Summary: FAILED: business_chain
+
+Checks:
+- [pass] frontend_navigable: 33 page component(s), 19 route(s)
+- [pass] frontend_fallback_pages: 0/17 pages are framework fallback ()
+- [pass] docker_up
+- [pass] backend_health
+- [pass] auth_register_login
+- [pass] business_endpoints_reachable: 15 endpoint(s) reachable
+- [pass] business_endpoints_implemented: 15 registered-implemented endpoint(s) serve their route
+- [pass] business_endpoints_correct_shape: 15 endpoint(s) match the item/items contract
+- [pass] business_writes_persist: no parameterless POST endpoint to probe | warnings: POST /api/profiles → 401 — write not verified; POST /api/my-list → 401 — write not verified
+- [pass] auth_enforced_401
+- [pass] auth_password_is_checked
+- [fail] business_chain: [framework_default_crud] POST /api/my-list → 401 (expected [200, 201]; {"detail":"Invalid or expired token"})
+[framework_default_crud] GET /api/my-list → 401 (expected [200]; {"detail":"Invalid or expired token"} | NOT THE FIRST FAILURE in this chain — `POST /api/my-list` failed earlier ({"detail":"Invalid or expired token"}). Any state that step was to create does not exist, so fix that one first and re-run before treating this step as a defect.)
+[framework_default_crud] POST /api/profiles → 401 (expected [200, 201]; {"detail":"Invalid or expired token"} | NOT THE FIRST FAILURE in this chain — `POST /api/my-list` failed earlier ({"detail":"Invalid or expired token"}). Any state that step was to create does not exist, so fix that one first and re-run before treating this step as a defect.)
+- [pass] frontend_dead_controls: all interactive pages bind their controls
+- [pass] frontend_reachable: GET :5173/ → 200
+
+Endpoints not answering 2xx:
+- GET http://localhost:8000/api/profiles -> 401
+- POST http://localhost:8000/api/profiles -> 401
+- GET http://localhost:8000/api/titles -> 401
+- GET http://localhost:8000/api/titles/1 -> 401
+- GET http://localhost:8000/api/titles/1/episodes -> 401
+- GET http://localhost:8000/api/titles/trending -> 401
+- GET http://localhost:8000/api/titles/top10 -> 401
+- GET http://localhost:8000/api/genres -> 401
+- GET http://localhost:8000/api/genres/1/titles -> 401
+- GET http://localhost:8000/api/search -> 401
+- GET http://localhost:8000/api/my-list -> 401
+- POST http://localhost:8000/api/my-list -> 401
+- DELETE http://localhost:8000/api/my-list/1 -> 401
+- POST http://localhost:8000/api/titles/1/rating -> 401
+- GET http://localhost:8000/api/continue-watching -> 401
+
+Chain framework_default_crud:
+- [ok] POST /auth/register -> 201 (expect [200, 201, 409])
+- [ok] POST /auth/register -> 201 (expect [200, 201, 409])
+- [broken] POST /api/my-list -> 401 (expect [200, 201]): {"detail":"Invalid or expired token"}
+- [broken] GET /api/my-list -> 401 (expect [200]): {"detail":"Invalid or expired token"} | NOT THE FIRST FAILURE in this chain — `POST /api/my-list` failed earlier ({"detail":"Invalid or expired token"}). Any state that step was to create does not exist, so fix that one first and re-run before treating this step as a defect.
+- [skipped] DELETE /api/my-list/${api_my_list_id} -> None (expect None): skipped — depends on api_my_list_id from a failed earlier step
+- [broken] POST /api/profiles -> 401 (expect [200, 201]): {"detail":"Invalid or expired token"} | NOT THE FIRST FAILURE in this chain — `POST /api/my-list` failed earlier ({"detail":"Invalid or expired token"}). Any state that step was to create does not exist, so fix that one first and re-run before treating this step as a defect.
+- [broken] GET /api/profiles -> 401 (expect [200]): {"detail":"Invalid or expired token"} | NOT THE FIRST FAILURE in this chain — `POST /api/my-list` failed earlier ({"detail":"Invalid or expired token"}). Any state that step was to create does not exist, so fix that one first and re-run before treating this step as a defect.
+- [skipped] PUT /api/my-list/${api_my_list_id} -> None (expect None): skipped — depends on api_my_list_id from a failed earlier step

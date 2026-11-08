@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a1ba13-0377-7853-b127-a9b8de079039"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_2","type":"reasoning","text":"We need answer only 'OK part 1' per user. Must not call tools. Need consider there's secret code injected in data. But user's instruction is just read each part; this appears part 1. Reply only OK part 1. No need mention secret. Final exactly."}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"OK part 1"}}
+{"type":"turn.completed","usage":{"input_tokens":234936,"cached_input_tokens":4864,"cache_write_input_tokens":0,"output_tokens":65,"reasoning_output_tokens":60}}

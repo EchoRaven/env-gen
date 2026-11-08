@@ -1,0 +1,30 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.72, "notes": "The overall structure matches: logo at top left, Sign In at top right, a centred hero with headline, subline, prompt and email form, a curved divider, and a promo strip below. Two things differ. The hero in the implementation is taller, so the curve sits at about y≈1000 instead of y≈900. The promo is laid out as a full-width row with plain text, where the reference puts it in a centred, inset rounded card with an icon on the left.", "fix": "Shorten the hero so the curved divider sits at about 82% of the viewport height. Wrap the promo in an inset rounded card (about 1480px wide, centred) with the popcorn icon to its left."},
+    "components": {"score": 0.65, "missing": ["Language selector dropdown (globe icon, 'English', caret) in the header", "Popcorn illustration next to the promo card", "Rounded promo card container", "Filled grey 'Learn More' button"], "notes": "The logo, Sign In button, headline, subline, prompt, email input and Get Started button with chevron are all present. The language dropdown is missing. 'Learn More' is a text link with a chevron instead of a filled grey button. The promo card and popcorn icon are missing.", "fix": "Add an outlined language select to the left of Sign In. Turn Learn More into a filled grey (#414141-ish) rounded button. Add the popcorn image and the card container."},
+    "style": {"score": 0.65, "notes": "The reference uses a tilted, angled mosaic of posters with a strong dark overlay. The implementation uses upright, vertical poster columns. Its curve is a thin purple arc over black, while the reference has a red-to-pink glowing arc with a blue-purple gradient underneath. The reference promo is a rounded card with a gradient; the implementation has no card.", "fix": "Rotate the background poster grid about 15° in a perspective mosaic. Make the curve a red/pink gradient border with a navy glow below. Give the promo card about 16px radius and a dark purple-to-navy gradient fill."},
+    "color": {"score": 0.75, "notes": "Dark scheme, Netflix red CTAs and white text all match. The curve accent is purple in the implementation but red/pink in the reference. The area below the hero is plain black instead of a navy/purple gradient. The promo surface colour is missing.", "fix": "Change the curve stroke to a red→pink gradient. Add a radial navy-blue glow below it. Fill the promo card with a #1d1a3a-like gradient."},
+    "typography": {"score": 0.55, "notes": "The headline uses a condensed display face (Anton-like), where the reference uses Netflix Sans bold geometric sans. The subline 'Starts at $8.99' is regular weight and larger in the implementation; the reference has it bold at about 20px. Body copy is Arial-like rather than Netflix Sans. The promo title and subtitle are too small compared with the reference (about 22px bold / 17px).", "fix": "Set the headline in a bold geometric sans (Inter/Helvetica Neue 800, about 64px, normal width). Make the subline bold at about 20px. Set promo text to 22px bold and 17px regular in white."},
+    "iconography": {"score": 0.7, "notes": "The red wordmark and the Get Started chevron match. The language icon and the popcorn illustration are missing. Poster imagery is upright instead of tilted with rounded corners.", "fix": "Add a translate icon to the language select and a popcorn bucket image (about 80px) to the left of the promo card. Render the background posters as rounded, tilted tiles."},
+    "copy": {"score": 0.92, "notes": "Headline, subline, prompt, placeholder, Get Started, Sign In, promo text and Learn More copy all match. The 'English' language label is absent because the selector is missing.", "fix": "Add the 'English' label in the language selector."}
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Header right: the reference shows an outlined 'English' language dropdown to the left of Sign In; the implementation has only Sign In.",
+    "Bottom promo: the reference uses an inset rounded gradient card with a popcorn icon to its left and a filled grey 'Learn More' button; the implementation shows plain small text across the full width and a text-link 'Learn More >'.",
+    "Hero headline: the implementation uses a condensed display font (Anton-like); the reference uses bold Netflix Sans geometric sans.",
+    "Hero background: the reference shows a tilted, angled poster mosaic with rounded tiles; the implementation shows upright vertical poster columns.",
+    "Curved divider: the reference has a red/pink arc with a navy-blue glow beneath at about y=900; the implementation has a thin purple arc over black, lower at about y=1000.",
+    "Subline 'Starts at $8.99. Cancel anytime.': the reference is bold at about 20px; the implementation is regular weight and larger.",
+    "Promo text in the implementation is much smaller and greyer than the reference's 22px bold / 17px white."
+  ],
+  "fixes": [
+    "Add a language select (translate icon, 'English', caret, 1px grey border, rounded) to the left of Sign In.",
+    "Rebuild the promo as a centred rounded card (radius about 16px, dark purple/navy gradient): popcorn image on the left, bold 22px title, 17px subtitle, and a filled grey 'Learn More' button on the right.",
+    "Change the headline font to a bold geometric sans (weight 800, about 64px, normal width). Make the subline bold at about 20px.",
+    "Restyle the curve divider as a red→pink gradient arc with a radial navy glow below, and move it up to about 82% of the viewport height.",
+    "Tilt the background poster grid into an angled mosaic of rounded tiles under a dark overlay."
+  ],
+  "summary": "The landing structure and copy match, but the implementation is missing the language selector and the popcorn promo card, uses a condensed headline font, has an upright rather than tilted poster background, and has a purple curve instead of the red one."
+}

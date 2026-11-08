@@ -1,0 +1,76 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Both use a centred ~1080px modal over a dimmed browse page. The order inside matches: hero with title, CTA row, then a two-column info block (meta and synopsis on the left, credits on the right), then Episodes with a season picker and episode rows. The differences: in the reference the modal starts about 36px from the top and covers the dimmed global header. In the implementation the header sits above the overlay at full brightness and the modal starts below it at about 90px. The reference hero is much taller (about 600px of 1108, with the title and CTAs in its lower half); the implementation hero is about 410px. The implementation also adds a full-width divider between the info block and Episodes, which the reference lacks.",
+      "fix": "Put the dim/scrim overlay above the global header and start the modal about 36px from the top. Make the hero about 600px tall, with the title lockup and CTA row at about 63–80% of hero height. Remove the horizontal divider above Episodes."
+    },
+    "components": {
+      "score": 0.62,
+      "notes": "Present: close X (circular, top right), white Play button, circular + and thumb buttons, year/HD/rating meta, synopsis, Genres and 'This ... is' credit lines, Episodes heading, Season dropdown, episode rows with number, thumbnail, title, runtime and description. Missing: the mute/volume circle at the bottom right of the hero, the subtitles (CC) icon in the meta row, the 'N seasons' count, the content-descriptor text next to the rating badge, the Cast line with an italic 'more', the 'Season 1: [TV-14] descriptors' subheader under Episodes, the caret on the season dropdown, and the highlighted rounded card behind the current episode. Invented: the 'N SERIES' eyebrow label, the green '86% Match', and the 'Maturity rating: … Recommended for ages 14 and up' line.",
+      "missing": [
+        "hero mute/volume toggle button (bottom-right of hero)",
+        "Cast credit line with 'more' link",
+        "season subheader row ('Season 1:' + rating badge + descriptors)",
+        "dropdown caret on Season selector",
+        "subtitles/CC icon in meta row",
+        "seasons count in meta row",
+        "content descriptors beside the rating badge",
+        "highlighted card background for the current episode row"
+      ],
+      "fix": "Add a 44px outline circle mute button at the bottom right of the hero, aligned with the CTA row. Add a CC icon and the seasons count after the year, and put the content descriptors after the TV-14 badge on a second meta line. Add 'Cast: …, more' as the first right-column line. Add a 'Season 1: [TV-14] descriptors' line under Episodes. Add a ▼ caret to the season select. Give the first episode row a #2f2f2f rounded card. Remove 'N SERIES', '% Match' and the Maturity rating line."
+    },
+    "style": {
+      "score": 0.72,
+      "notes": "Both are dark, flat and cinematic, with a slightly rounded modal, a gradient fade from hero into the body, outline circular icon buttons and a square-ish white Play button. Differences: the implementation separates episodes with hairline dividers, while the reference uses a filled, lightly rounded card for the active row. The implementation is denser, with smaller type and tighter rows. The reference's Season select is larger, roughly 180×46.",
+      "fix": "Replace the episode hairline dividers with a filled #2f2f2f, 4px-radius card for the active row and no dividers between rows. Increase vertical padding in the info and episode sections. Enlarge the Season select to about 180×46 with a 1px light-grey border."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a #181818 modal on a black dimmed backdrop, white primary text, grey labels for the credit keys, a white Play button with black text, and grey outlined badges. Differences: the implementation adds a green Match accent that the reference doesn't have, and its global header is undimmed and visually bright, which pulls focus from the modal.",
+      "fix": "Remove the green match text. Dim the header with the same black scrim (about 70%) as the rest of the backdrop."
+    },
+    "typography": {
+      "score": 0.62,
+      "notes": "Both use a Netflix-style sans. The title treatment differs: the reference has a stylised, condensed title-art logo, while the implementation uses a plain bold sans text title. Size hierarchy is weaker in the implementation. Meta and synopsis are about 14–15px against about 17–18px in the reference. Episode titles are about 14px against about 18px, and episode numbers ('01', small) against a large '1' (about 24px, light grey). The CTA text is smaller ('Play' about 16px against about 22px).",
+      "fix": "Render the title as title-art imagery, or a condensed display-weight lockup, about 70px tall. Raise synopsis and meta to about 17px with line-height 1.6. Make episode titles about 18px medium and descriptions about 15px. Set episode numbers as a single digit at about 24px, light grey and centred. Make the Play label about 22px semibold."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The play triangle, outline + circle and X close match. The thumb icon is filled in the implementation and an outline in the reference. The CC/subtitles icon and the speaker-mute icon are missing. Episode thumbnails are 16:9 cover with slight rounding, as in the reference, but slightly smaller (about 142×80 against about 170×96).",
+      "fix": "Change the rate button to an outline thumbs-up glyph. Add an outline speech-bubble CC icon after the HD badge and an outline speaker-with-x icon in the mute button. Enlarge episode thumbnails to about 170×96."
+    },
+    "copy": {
+      "score": 0.68,
+      "notes": "'Play', 'Episodes', 'Season 1', 'Genres:' and 'HD' match. The reference says 'This Show Is:'; the implementation says 'This title is:'. 'N SERIES', 'Maturity rating:', 'Recommended for ages 14 and up' and the 'Match' copy are invented. The 'Cast:' label and the 'more' link are absent. Runtime is '42 min' in the meta row where the reference shows 'N Seasons'.",
+      "fix": "Rename the label to 'This Show Is:'. Add 'Cast:' and 'more'. Replace the runtime in the meta row with 'N Seasons'. Remove 'N SERIES', 'Maturity rating', 'Recommended for ages…' and '% Match'."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "global header: implementation shows the nav bar at full brightness above the overlay, with the modal starting below it at about 90px; the reference dims the header under the scrim and the modal covers it from about 36px",
+    "hero: implementation hero is about 410px tall with a plain bold text title and an 'N SERIES' eyebrow; the reference hero is about 600px with a stylised title-art lockup and no eyebrow",
+    "hero bottom-right: the reference's circular mute/volume button is missing in the implementation",
+    "meta row: implementation adds green '86% Match' and '42 min' and drops the seasons count, CC icon and content-descriptor text after the TV-14 badge; the reference uses two lines (year/seasons/HD/CC, then rating badge + descriptors)",
+    "right credits column: implementation lacks the 'Cast: …, more' line, adds an invented 'Maturity rating … Recommended for ages 14 and up' line, and labels 'This title is' instead of 'This Show Is'",
+    "episodes header: implementation lacks the 'Season 1: [TV-14] descriptors' subheader, and its Season select is smaller with no ▼ caret",
+    "episode list: implementation uses hairline-divided rows with small '01' numbering; the reference shows the current episode inside a filled grey rounded card with a large '1', larger thumbnail and larger title/description type",
+    "between info and Episodes: implementation adds a full-width divider line that the reference lacks",
+    "rate button: filled thumb icon in the implementation; the reference uses an outline thumb",
+    "typography scale: implementation synopsis, meta and CTA text are noticeably smaller than the reference"
+  ],
+  "fixes": [
+    "Move the scrim above the global header so it dims too, and position the modal about 36px from the top.",
+    "Increase the hero height to about 600px; render the title as a large title-art lockup and remove the 'N SERIES' eyebrow.",
+    "Add an outline circular mute button (speaker-x icon) at the bottom right of the hero, vertically aligned with the Play row; switch the thumb button to an outline icon.",
+    "Rebuild the meta block as line 1 'YEAR  N Seasons [HD] [CC icon]' and line 2 '[TV-14] descriptors'; remove the % Match and runtime.",
+    "Right column: show 'Cast: …, more' (italic 'more'), 'Genres: …' and 'This Show Is: …'; remove the Maturity rating line.",
+    "Under the 'Episodes' heading, add 'Season 1: [TV-14] descriptors'; enlarge the Season select to about 180×46 with a ▼ caret.",
+    "Episode rows: show the number as a large single digit, use about 170×96 thumbnails and larger title/description type, give the current row a #2f2f2f rounded card, and remove the hairline dividers and the divider above Episodes.",
+    "Increase body type to about 17px for the synopsis and meta, and the Play label to about 22px."
+  ],
+  "summary": "Same Netflix More-Info modal skeleton and dark colour system, but the header isn't dimmed, the hero is shorter with a plain text title, and the mute button, Cast line, season subheader, dropdown caret and highlighted episode card are missing, while Match/N SERIES/Maturity-rating copy is invented."
+}
+```

@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.66,
+      "notes": "Both screens have the same basic structure: a centered dark modal over a dimmed home page, with an 'Episodes' heading on the left and a control on the right, then a vertical list of episodes. Each row has a number, a thumbnail and a text block. The differences: the implementation's modal is narrower (about 960px against about 1085px). Its rows are shorter (about 112px against about 145px). Its title and duration sit in a narrow column that ends around x≈910, while the reference spreads them across the full row and right-aligns the duration around x≈1366. The implementation also adds a full-width divider above Episodes, and 'More Like This' starts right after episode 4. In the reference, episodes keep going past the bottom of the screen. Behind the modal, the reference shows the hero as an inset card with rounded corners and a solid black header bar. The implementation shows a full-bleed hero with a transparent header.",
+      "fix": "Widen the modal to about 1085px. Make each episode row about 145px tall and stretch the text column across the row, so the duration is right-aligned at the far end of the title line and the synopsis fills the full width. Remove the divider above 'Episodes'. Behind the modal, render the hero as an inset card with rounded corners under a solid black header."
+    },
+    "components": {
+      "score": 0.68,
+      "missing": [
+        "Plain-text episode context label on the right of the Episodes header (the reference shows text, not a select box)",
+        "Pill highlight on the active 'Home' nav item in the background header",
+        "'Kids' profile entry in the background header"
+      ],
+      "notes": "The episode rows have all the expected parts: number, thumbnail with a play overlay, title, duration and synopsis. The highlighted-row state is there too. On the right of the header, the implementation shows a native 'Season 1' select box with a border, while the reference shows a plain text label. Synopses are one-line placeholders, which is a data gap. 'More Like This' cards appear inside the scrolled view, while in the reference the same view is still filled with episodes. The background header has no Home pill and no Kids entry.",
+      "fix": "Replace the native select with a borderless text label, or a minimal text-style dropdown. Add the pill background to the active Home nav item and the Kids profile entry to the header."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use a flat dark modal with hairline dividers between rows and a highlighted row on a lighter gray fill. The reference's highlighted row has slightly rounded corners and more padding, and the layout feels airier overall. The implementation is more compact: smaller thumbnails, tighter rows and a boxy native select.",
+      "fix": "Increase row padding to about 24px vertically. Give the highlighted row a #2f2f2f fill with a radius of about 4px. Remove the bordered select styling."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both have a dark #181818-style modal over a dimmed page, white titles, light gray synopsis text and a lighter gray highlighted row. The colour palette matches closely. The implementation's background hero is darker, and its header is transparent instead of solid black.",
+      "fix": "Make the background header a solid near-black. Keep the modal colours as they are."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans-serif with a bold 'Episodes' heading, bold episode titles and regular-weight synopses. The implementation sets episode titles, durations and synopses noticeably smaller (about 13-14px against 16-17px). Its episode numbers are zero-padded ('01') and smaller, while the reference uses large light single digits ('1'). Its durations are small and gray, while the reference's are larger and white.",
+      "fix": "Episode titles: about 17px bold. Duration: about 17px, white, right-aligned. Synopsis: about 15px with a line height of about 1.45. Episode number: about 26px, light weight, not zero-padded."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "Both use 16:9 thumbnails with a white play overlay on the active or hovered row. The implementation's thumbnails are smaller (about 148×83 against 170×96), and its play icon is a bare triangle. The reference uses a triangle inside a circular outline on a translucent backdrop.",
+      "fix": "Make thumbnails about 170×96 with a radius of about 4px. Draw the hover play icon as a white triangle inside a circular outline about 48px across, on a translucent dark disc."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The 'Episodes' heading matches. The right-hand label reads 'Season 1' in a select box, while the reference shows a plain title label. Episode numbering is formatted as '01' instead of '1'. The placeholder synopsis text is a data gap and was not scored.",
+      "fix": "Show episode numbers without zero padding. Render the right-hand header label as plain text."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: the implementation shows a bordered native 'Season 1' select box; the reference shows a borderless plain text label",
+    "Episode rows: the implementation squeezes title, duration and synopsis into a narrow column ending around x≈910; the reference spreads them across the row, with the duration right-aligned around x≈1366 and synopses that wrap to two lines",
+    "Episode rows: the implementation's rows are shorter (about 112px against 145px), with smaller thumbnails (148px wide against 170px) and smaller text",
+    "Episode numbers: the implementation uses small zero-padded '01'; the reference uses larger, light single digits '1'",
+    "Below episode 4: the implementation starts a 'More Like This' card grid within this view; in the reference the same view is still showing the episode list",
+    "Modal width: the implementation is about 960px wide; the reference is about 1085px",
+    "Above the Episodes heading: the implementation adds a full-width divider line that the reference doesn't have",
+    "Play overlay: the implementation uses a bare triangle; the reference uses a triangle inside a circular outline",
+    "Background header: the implementation is missing the pill highlight on 'Home' and the 'Kids' entry, and is transparent instead of solid black",
+    "Background hero: the implementation is full-bleed; the reference is an inset card with rounded corners"
+  ],
+  "fixes": [
+    "Replace the 'Season 1' native select with a borderless plain-text label, right-aligned with the 'Episodes' heading",
+    "Restructure each episode row: large light number (about 26px, not zero-padded), a 170×96 thumbnail, then a text block that fills the remaining width, with the title (about 17px bold) on the left, the duration (about 17px, white) right-aligned, and the synopsis (about 15px) below at full width",
+    "Increase row height to about 145px. Give the highlighted row a #2f2f2f fill with a radius of about 4px. Keep hairline dividers between rows",
+    "Widen the modal to about 1085px and remove the divider above 'Episodes'",
+    "Use a circular-outline play icon for the thumbnail hover overlay",
+    "Background header: make it solid black, add the pill highlight to active 'Home' and add the 'Kids' entry. Render the hero as an inset card with rounded corners"
+  ],
+  "summary": "The episodes modal has the same overall structure and colour system as the reference, but its rows are compact and narrow with small type, and it uses a native season select, zero-padded numbers and a bare play icon instead of the reference's wide, airy rows."
+}
+```

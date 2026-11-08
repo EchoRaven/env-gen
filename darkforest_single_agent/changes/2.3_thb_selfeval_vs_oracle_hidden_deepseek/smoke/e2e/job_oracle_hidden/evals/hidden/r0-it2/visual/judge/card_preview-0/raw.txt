@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "Both use the same top bar: NETFLIX wordmark on the left, then nav links, with search, bell and avatar on the right. The page underneath is different. The reference is the 'Browse by Languages' grid: a page title with 'Select Your Preferences' and two dropdowns on the right, then a 6-column tile grid with no row headings. The implementation shows the Home page instead: a full-bleed hero, then titled horizontal rails ('Trending Now', 'Continue Watching for You'). The preview card also sits differently. In the reference it is scaled to about 1.5× the tile, grows upward well above its row (top near y=172, while the row starts at y=306), and is fully visible. In the implementation it is barely bigger than the tile, stays inside the row band, and its bottom is clipped by the next section's heading.",
+      "fix": "Render the hovered card as a floating overlay: scale it to about 1.5× the tile width, centre it vertically on the tile so it extends well above the row, give it a z-index above the following rows, and remove overflow clipping on the rail container so the whole card shows."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "The card has the same control set as the reference: a white filled play circle, outlined check and thumbs-up circles, and an outlined chevron circle on the right. In the implementation these circles are about 30px, where the reference's are about 52px. The metadata row (rating box, seasons, HD badge) is cut off and unreadable. The genre-tag row ('Imaginative • Adventure • Epic World') is missing entirely. The reference's mute/volume circle at the bottom-right of the artwork is absent. The implementation adds a text title overlay ('Stranger Things') on the artwork; the reference uses the show's own title-art logo plus a small red N badge at top-left. The reference's page-level controls (page title, 'Select Your Preferences' dropdowns, active-pill nav item) are missing, and the implementation adds a hero with Play/More Info and rail carousel arrows that the reference doesn't show.",
+      "missing": ["genre tag row with bullet separators", "readable metadata row (rating box, seasons, HD badge)", "mute toggle circle on the preview artwork", "N badge on the preview artwork", "'Browse by Languages' page title", "'Select Your Preferences' language dropdowns", "pill-highlighted active nav item"],
+      "fix": "Enlarge the action buttons to about 52px circles with a 2px grey outline. Below them, add a full metadata row (outlined rating box, 'N Seasons', outlined HD badge) and a genre row of three tags separated by grey bullets. Add a circular mute button at the bottom-right of the artwork. Drop the plain-text title overlay inside the card."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "The dark, flat, minimal style matches. The reference card has a dark #181818 info panel with generous padding (about 18px) and a rounded bottom with a soft shadow. The implementation's info area is cramped and cut off, so its padding rhythm and depth don't come across.",
+      "fix": "Give the card's info panel #181818 with about 18px padding, a 6px radius on the bottom corners, and a diffuse shadow of about 0 8px 24px rgba(0,0,0,.75)."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a #141414 dark base with white text and a red brand colour. The reference's active nav item is a grey pill. In the implementation the active item is bold white with no pill. The implementation also has a green 'Match' text that the reference card doesn't show.",
+      "fix": "Remove the green match text from the hover card. Use a grey pill (about #333) behind the active nav item."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "Both use a sans-serif. The reference card metadata is about 17px regular white, and the genre tags are the same size. In the implementation the card text is tiny (about 10px) and clipped. The reference's page heading is a large 34px regular-weight 'Browse by Languages'. The implementation has bold rail headings instead.",
+      "fix": "Set the hover-card metadata and genre text to about 16–17px regular white, and show the rating and HD in thin-outlined boxes."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "The icon styles match: outline check, thumbs-up and chevron, and a filled play triangle. The implementation's icons are much smaller. The artwork crop (16:9 cover) is consistent between the two.",
+      "fix": "Scale the icon buttons to about 52px with icons of about 24px, and add a speaker-muted icon button over the artwork."
+    },
+    "copy": {
+      "score": 0.6,
+      "notes": "The nav labels match: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages. The reference's 'Kids' link is absent in the implementation. Also absent are 'Select Your Preferences', the 'Original Language'/'English' dropdowns, and the page title.",
+      "fix": "Add the 'Kids' profile link next to the avatar."
+    }
+  },
+  "similarity": 0.45,
+  "empty_state": false,
+  "deviations": [
+    "Hover card: the implementation is barely enlarged and stays inside the row. The reference card is about 1.5× the tile and rises well above its row.",
+    "Hover card bottom: the implementation's metadata row is clipped by the 'Continue Watching for You' heading, and the genre-tag row never appears. The reference shows both rows in full.",
+    "Hover card buttons: the implementation's circles are about 30px. The reference's are about 52px with clear outlines.",
+    "Hover card artwork: the implementation has no mute circle at bottom-right and no N badge at top-left, and it adds a plain-text title overlay.",
+    "Page context: the implementation shows the Home hero and titled rails. The reference is the Browse by Languages page with a page title, preference dropdowns and an unlabeled 6-column grid.",
+    "Top nav: the implementation has no grey pill on the active item and no 'Kids' link."
+  ],
+  "fixes": [
+    "Make the hover card an absolutely positioned overlay, scaled to about 1.5× the tile and centred on it so it extends upward, with a high z-index and no clipping from the rail overflow.",
+    "Below the artwork, add a #181818 panel with about 18px padding containing: a row of about 52px circular buttons (white play, outlined check, outlined thumbs-up, and an outlined chevron pushed to the right); an outlined rating box with 'N Seasons' and an HD badge; and three genre tags separated by '•'.",
+    "Add a circular muted-speaker button at the bottom-right of the card artwork and the red N badge at the top-left. Remove the text title overlay.",
+    "If this route is meant to match the Browse by Languages context, render that page: the 'Browse by Languages' title, 'Select Your Preferences' with two outlined dropdowns, and a grid with no row headings. Highlight the active nav item with a grey pill."
+  ],
+  "summary": "The hover card has the right control set, but it is under-scaled, clipped, and missing its metadata and genre rows. It also sits on the Home page instead of the reference's Browse by Languages grid."
+}
+```

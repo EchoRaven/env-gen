@@ -1,0 +1,19 @@
+{
+ "session_id": "01a1ba49-f40e-7a31-8fa1-578c13af04af",
+ "num_turns": 18,
+ "commands": 5,
+ "usage": {
+  "input_tokens": 82382016,
+  "cached_input_tokens": 81985024,
+  "cache_write_input_tokens": 0,
+  "output_tokens": 342676,
+  "reasoning_output_tokens": 170531
+ },
+ "is_error": false,
+ "result": "**Iteration 12 improvements**\n- Reached `15/15` contract endpoints answering 2xx with authentication.\n- Added a documented deterministic default for My List creation when no `title_id` is supplied.\n- Added resume-aware Play buttons on hero and detail views using real per-profile progress.\n- Added route-aware browser titles across all major screens.\n- Improved Top 10 ranking cards, My List heading alignment, rating-state indicators, and generated runtime variety.\n- Added more varied generated episode titles and durations.\n\n**Validation**\n- `14/14` api_smoke checks pass.\n- Contract endpoint coverage: `15/15`.\n- Business chain: `8/8` steps pass.\n- Frontend is reachable with no dead controls detected.\n\nRemaining limitations: no Netflix Games media or subtitle tracks exist in the supplied assets, so those areas use real related catalog content and explicit unavailable states.",
+ "_rc": 0,
+ "_timed_out": false,
+ "_silent": false,
+ "_wall_s": 50.5,
+ "_stderr": ""
+}

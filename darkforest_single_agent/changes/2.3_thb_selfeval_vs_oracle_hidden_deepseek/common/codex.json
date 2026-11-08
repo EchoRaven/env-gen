@@ -1,0 +1,13 @@
+{
+  "codex_dir": "/home/user/project/shabi_forest/.envs/codex/0.163.0",
+  "base_url": "http://127.0.0.1:39823/v1",
+  "health_url": "http://127.0.0.1:39823/health",
+  "model": "deepseek-v4.1-flash",
+  "served_weights": "deepseek-v4.1-flash via api.inco.ai (upstream id deepseek-v4.1-flash:fast, the same weights on the provider's faster tier; the standard tier answers 503 server_is_overloaded), through scripts/llm_gateway.py",
+  "effort": "medium",
+  "context_window": 1048576,
+  "auto_compact_tokens": 967000,
+  "silence_s": 3600,
+  "max_attempts_per_iter": 8,
+  "fresh_session_after_failed_resumes": 2
+}

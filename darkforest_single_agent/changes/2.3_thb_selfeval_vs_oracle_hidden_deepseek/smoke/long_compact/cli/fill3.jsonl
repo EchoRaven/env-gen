@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a1ba13-0377-7853-b127-a9b8de079039"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_2","type":"reasoning","text":"We need just reply OK part 3. No tools."}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"OK part 3"}}
+{"type":"turn.completed","usage":{"input_tokens":1394603,"cached_input_tokens":704512,"cache_write_input_tokens":0,"output_tokens":101,"reasoning_output_tokens":86}}
